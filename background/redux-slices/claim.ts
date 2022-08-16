@@ -17,15 +17,15 @@ import { HexString } from "../types"
 import DISTRIBUTOR_ABI from "./contract-abis/merkle-distributor"
 
 import { DOGGO, HOUR } from "../constants"
-import { USE_MAINNET_FORK } from "../features"
+import { HIDE_TOKEN_FEATURES, USE_MAINNET_FORK } from "../features"
 import { ERC2612_INTERFACE } from "../lib/erc20"
 import { ReferrerStats } from "../services/doggo/db"
 import { fromFixedPointNumber } from "../lib/fixed-point"
 
 export interface DAO {
   address: string
-  name: string
-  avatar: string
+  name?: string
+  avatar?: string
 }
 
 export interface Delegate {
@@ -51,10 +51,10 @@ interface ClaimingState {
   eligibility: Eligible | null
   eligibilityLoading: boolean
   DAOs: DAO[]
-  selectedDAO: DAO | null
+  selectedForBonus: DAO | null
   selectedDelegate: Delegate | null
   signature: Signature | undefined
-  nonce: number | undefined
+  nonce?: number
   expiry: number | undefined
   claimStep: number
   currentlyClaiming: boolean
@@ -79,7 +79,7 @@ const getDistributorContract = async () => {
 const initialState: ClaimingState = {
   status: "idle",
   claimed: {},
-  selectedDAO: null,
+  selectedForBonus: null,
   selectedDelegate: null,
   eligibility: null,
   eligibilityLoading: false,
@@ -109,8 +109,8 @@ const claimingSlice = createSlice({
   name: "claim",
   initialState,
   reducers: {
-    chooseDAO: (immerState, { payload: DAO }) => {
-      immerState.selectedDAO = DAO
+    chooseSelectedForBonus: (immerState, { payload: DAO }) => {
+      immerState.selectedForBonus = DAO
     },
     chooseDelegate: (immerState, { payload: delegate }) => {
       immerState.selectedDelegate = delegate
@@ -154,7 +154,7 @@ const claimingSlice = createSlice({
     }),
     resetClaimFlow: (immerState) => {
       immerState.signature = undefined
-      immerState.selectedDAO = null
+      immerState.selectedForBonus = null
       immerState.selectedDelegate = null
       immerState.claimStep = 1
       immerState.nonce = undefined
@@ -181,7 +181,7 @@ const claimingSlice = createSlice({
 })
 
 export const {
-  chooseDAO,
+  chooseSelectedForBonus,
   chooseDelegate,
   setEligibility,
   setEligibilityLoading,
@@ -202,6 +202,9 @@ export default claimingSlice.reducer
 export const checkAlreadyClaimed = createBackgroundAsyncThunk(
   "claim/checkAlreadyClaimed",
   async ({ claimState }: { claimState: ClaimingState }, { dispatch }) => {
+    if (HIDE_TOKEN_FEATURES) {
+      return false
+    }
     const { eligibility } = claimState
     const distributorContract = await getDistributorContract()
     if (!eligibility) {
@@ -225,7 +228,7 @@ export const claimRewards = createBackgroundAsyncThunk(
     const account = await signer.getAddress()
 
     const referralAddress =
-      claimState.referrer?.address ?? claimState.selectedDAO?.address
+      claimState.referrer?.address ?? claimState.selectedForBonus?.address
 
     const delegate = claimState.selectedDelegate
     const { signature, eligibility } = claimState
@@ -257,7 +260,7 @@ export const claimRewards = createBackgroundAsyncThunk(
     }
 
     let claimTransaction
-    if (claimState.selectedDAO === null && delegate === null) {
+    if (claimState.selectedForBonus === null && delegate === null) {
       claimTransaction = await distributorContract.populateTransaction.claim(
         eligibility.index,
         account,
@@ -401,7 +404,7 @@ export const selectClaimSelections = createSelector(
           ? truncateAddress(claimState?.selectedDelegate?.address)
           : undefined,
       },
-      selectedDAO: claimState.selectedDAO,
+      selectedForBonus: claimState.selectedForBonus,
     }
   }
 )

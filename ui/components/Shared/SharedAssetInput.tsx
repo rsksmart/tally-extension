@@ -5,6 +5,7 @@ import React, {
   useRef,
   useState,
 } from "react"
+import { useTranslation } from "react-i18next"
 import { AnyAsset, Asset } from "@tallyho/tally-background/assets"
 import { normalizeEVMAddress } from "@tallyho/tally-background/lib/utils"
 import {
@@ -12,6 +13,7 @@ import {
   fixedPointNumberToString,
   parseToFixedPointNumber,
 } from "@tallyho/tally-background/lib/fixed-point"
+import { selectCurrentNetwork } from "@tallyho/tally-background/redux-slices/selectors"
 import SharedButton from "./SharedButton"
 import SharedSlideUpMenu from "./SharedSlideUpMenu"
 import SharedAssetItem, {
@@ -19,18 +21,18 @@ import SharedAssetItem, {
   hasAmounts,
 } from "./SharedAssetItem"
 import SharedAssetIcon from "./SharedAssetIcon"
+import { useBackgroundSelector } from "../../hooks"
 
 // List of symbols we want to display first.  Lower array index === higher priority.
 // For now we just prioritize somewhat popular assets that we are able to load an icon for.
 const SYMBOL_PRIORITY_LIST = [
-  "UST",
+  "MATIC",
   "KEEP",
   "ENS",
   "CRV",
   "FTM",
   "GRT",
   "BAL",
-  "MATIC",
   "NU",
   "AMP",
   "BNT",
@@ -112,6 +114,7 @@ function assetAlphabeticSorterWithFilter<
 function SelectAssetMenuContent<T extends AnyAsset>(
   props: SelectAssetMenuContentProps<T>
 ): ReactElement {
+  const { t } = useTranslation()
   const { setSelectedAssetAndClose, assets } = props
   const [searchTerm, setSearchTerm] = useState("")
   const searchInput = useRef<HTMLInputElement | null>(null)
@@ -153,7 +156,7 @@ function SelectAssetMenuContent<T extends AnyAsset>(
             type="text"
             ref={searchInput}
             className="search_input"
-            placeholder="Search by name or address"
+            placeholder={t("assetInput.search")}
             spellCheck={false}
             onChange={(event) => setSearchTerm(event.target.value)}
           />
@@ -312,6 +315,7 @@ function assetWithOptionalAmountFromAsset<T extends AnyAsset>(
 export default function SharedAssetInput<T extends AnyAsset>(
   props: SharedAssetInputProps<T>
 ): ReactElement {
+  const { t } = useTranslation()
   const {
     assetsAndAmounts,
     label,
@@ -324,8 +328,12 @@ export default function SharedAssetInput<T extends AnyAsset>(
     onAssetSelect,
     onAmountChange,
   } = props
+  const currentNetwork = useBackgroundSelector(selectCurrentNetwork)
 
   const [openAssetMenu, setOpenAssetMenu] = useState(false)
+
+  // TODO: use https://reactjs.org/docs/hooks-reference.html#useid once we update to version 18
+  const [inputId] = useState(Math.floor(Math.random() * 100))
 
   const toggleIsAssetMenuOpen = useCallback(() => {
     if (!isAssetOptionsLocked) {
@@ -347,6 +355,10 @@ export default function SharedAssetInput<T extends AnyAsset>(
     [onAssetSelect]
   )
 
+  const isMaxButtonVisible =
+    showMaxButton &&
+    selectedAssetAndAmount?.asset.symbol !== currentNetwork.baseAsset.symbol
+
   const getErrorMessage = (givenAmount: string): string | undefined => {
     if (
       givenAmount.trim() === "" ||
@@ -359,7 +371,7 @@ export default function SharedAssetInput<T extends AnyAsset>(
 
     const parsedGivenAmount = parseToFixedPointNumber(givenAmount.trim())
     if (typeof parsedGivenAmount === "undefined") {
-      return "Invalid amount"
+      return t("assetInput.error.invalidAmount")
     }
 
     const decimalMatched = convertFixedPointNumber(
@@ -370,7 +382,7 @@ export default function SharedAssetInput<T extends AnyAsset>(
       decimalMatched.amount > selectedAssetAndAmount.amount ||
       selectedAssetAndAmount.amount <= 0
     ) {
-      return "Insufficient balance"
+      return t("assetInput.error.insufficientBalance")
     }
 
     return undefined
@@ -402,8 +414,8 @@ export default function SharedAssetInput<T extends AnyAsset>(
         className="label"
         htmlFor={
           typeof selectedAsset === "undefined"
-            ? "asset_selector"
-            : "asset_amount_input"
+            ? `asset_selector${inputId}`
+            : `asset_amount_input${inputId}`
         }
       >
         {label}
@@ -415,7 +427,7 @@ export default function SharedAssetInput<T extends AnyAsset>(
           <span className="available">
             Balance: {selectedAssetAndAmount.localizedDecimalAmount}
           </span>
-          {showMaxButton ? (
+          {isMaxButtonVisible ? (
             <button type="button" className="max" onClick={setMaxBalance}>
               Max
             </button>
@@ -450,20 +462,20 @@ export default function SharedAssetInput<T extends AnyAsset>(
             />
           ) : (
             <SharedButton
-              id="asset_selector"
+              id={`asset_selector${inputId}`}
               type="secondary"
               size="medium"
               isDisabled={isDisabled || disableDropdown}
               onClick={toggleIsAssetMenuOpen}
               iconSmall="dropdown"
             >
-              Select token
+              {t("assetInput.selectToken")}
             </SharedButton>
           )}
         </div>
 
         <input
-          id="asset_amount_input"
+          id={`asset_amount_input${inputId}`}
           className="input_amount"
           type="number"
           step="any"
@@ -514,6 +526,14 @@ export default function SharedAssetInput<T extends AnyAsset>(
             box-sizing: border-box;
             position: relative;
           }
+          // Using :global() to target child component
+          label:hover ~ .asset_wrap > div > :global(button:hover) {
+            background: unset;
+            color: var(--trophy-gold);
+          }
+          label:hover ~ .asset_wrap > div > :global(button:hover .icon_button) {
+            background-color: var(--trophy-gold);
+          }
           .asset_input {
             width: 100%;
             height: 34px;
@@ -538,6 +558,7 @@ export default function SharedAssetInput<T extends AnyAsset>(
             font-weight: 500;
             line-height: 32px;
             text-align: right;
+            text-overflow: ellipsis;
           }
           input::-webkit-outer-spin-button,
           input::-webkit-inner-spin-button {

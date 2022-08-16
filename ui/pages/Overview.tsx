@@ -1,34 +1,54 @@
-import React, { ReactElement } from "react"
-import { selectAccountAndTimestampedActivities } from "@tallyho/tally-background/redux-slices/selectors"
+import React, { ReactElement, useState } from "react"
+import { useTranslation } from "react-i18next"
+import {
+  getAddressCount,
+  getNetworkCount,
+  selectAccountAndTimestampedActivities,
+} from "@tallyho/tally-background/redux-slices/selectors"
+import { SUPPORT_NFTS } from "@tallyho/tally-background/features"
 import { useBackgroundSelector } from "../hooks"
 import OverviewAssetsTable from "../components/Overview/OverviewAssetsTable"
 import SharedLoadingSpinner from "../components/Shared/SharedLoadingSpinner"
+import SharedPanelSwitcher from "../components/Shared/SharedPanelSwitcher"
+import NFTsOverview from "../components/NFTs/NFTsOverview"
+import SharedBanner from "../components/Shared/SharedBanner"
 
 export default function Overview(): ReactElement {
+  const { t } = useTranslation()
+
+  const [panelNumber, setPanelNumber] = useState(0)
+  const panelNames = ["Assets", "NFTs"]
+
   const { combinedData } = useBackgroundSelector(
     selectAccountAndTimestampedActivities
   )
 
-  const { initializationLoadingTimeExpired, numberOfAddresses } =
-    useBackgroundSelector((background) => {
-      return {
-        numberOfAddresses: Object.keys(background.account.accountsData).length,
-        initializationLoadingTimeExpired:
-          background.ui?.initializationLoadingTimeExpired,
-      }
-    })
+  const {
+    initializationLoadingTimeExpired,
+    numberOfAddresses,
+    numberOfNetworks,
+  } = useBackgroundSelector((state) => {
+    return {
+      numberOfNetworks: getNetworkCount(state),
+      numberOfAddresses: getAddressCount(state),
+      initializationLoadingTimeExpired:
+        state.ui?.initializationLoadingTimeExpired,
+    }
+  })
 
   return (
     <>
       <header className="standard_width">
         <div className="header_primary_content">
-          <span className="total_balance_label">Total balance</span>
+          <span className="total_balance_label">
+            {t("overview.totalBalance")}
+          </span>
           <div className="primary_balance">
             {initializationLoadingTimeExpired ||
             combinedData?.totalMainCurrencyValue ? (
               <>
                 <span className="primary_money_sign">$</span>
-                {combinedData?.totalMainCurrencyValue}
+                {combinedData?.totalMainCurrencyValue ?? "0"}
               </>
             ) : (
               <div className="loading_wrap">
@@ -39,19 +59,48 @@ export default function Overview(): ReactElement {
         </div>
         <div className="sub_info_row">
           <div className="info_group_item">
-            <span className="info_left">Addresses</span>
+            <span className="info_left">{t("overview.networks")}</span>
+            {numberOfNetworks}
+          </div>
+          <div className="info_group_item">
+            <span className="info_left">{t("overview.addresses")}</span>
             {numberOfAddresses}
           </div>
           <div className="info_group_item">
-            <span className="info_left">Assets</span>
+            <span className="info_left">{t("overview.assets")}</span>
             {combinedData.assets.length}
           </div>
         </div>
       </header>
-      <OverviewAssetsTable
-        assets={combinedData.assets}
-        initializationLoadingTimeExpired={initializationLoadingTimeExpired}
-      />
+      {SUPPORT_NFTS && (
+        <div className="panel_switcher">
+          <SharedPanelSwitcher
+            setPanelNumber={setPanelNumber}
+            panelNumber={panelNumber}
+            panelNames={panelNames}
+          />
+        </div>
+      )}
+      {panelNumber === 0 && (
+        <OverviewAssetsTable
+          assets={combinedData.assets}
+          initializationLoadingTimeExpired={initializationLoadingTimeExpired}
+        />
+      )}
+      {panelNumber === 1 && SUPPORT_NFTS && (
+        <>
+          <SharedBanner
+            icon="notif-announcement"
+            iconColor="var(--link)"
+            canBeClosed
+            id="nft_soon"
+            customStyles="margin: 8px 0;"
+          >
+            Coming soon: NFT price + sending
+          </SharedBanner>
+          <NFTsOverview />
+        </>
+      )}
       <style jsx>
         {`
           .header_primary_content {
@@ -73,8 +122,7 @@ export default function Overview(): ReactElement {
             border-bottom-left-radius: 4px;
             box-sizing: border-box;
             padding-bottom: 15px;
-            margin-top: 16px;
-            margin-bottom: -6px;
+            margin: 16px 0;
           }
           .primary_balance {
             color: #fff;
@@ -127,6 +175,9 @@ export default function Overview(): ReactElement {
             font-weight: 600;
             line-height: 24px;
             text-align: center;
+          }
+          .panel_switcher {
+            width: 100%;
           }
         `}
       </style>

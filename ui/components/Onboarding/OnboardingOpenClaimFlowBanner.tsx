@@ -3,7 +3,7 @@ import { Link } from "react-router-dom"
 import classNames from "classnames"
 import {
   selectCurrentAccount,
-  selectCurrentAccountSigningMethod,
+  selectCurrentAccountSigner,
 } from "@tallyho/tally-background/redux-slices/selectors"
 import {
   selectClaimed,
@@ -13,21 +13,24 @@ import {
   selectEligibilityLoading,
 } from "@tallyho/tally-background/redux-slices/claim"
 
-import { SigningMethod } from "@tallyho/tally-background/utils/signing"
+import {
+  AccountSigner,
+  ReadOnlyAccountSigner,
+} from "@tallyho/tally-background/services/signing"
 import { useBackgroundSelector, useLocalStorage } from "../../hooks"
 import SharedButton from "../Shared/SharedButton"
 import SharedIcon from "../Shared/SharedIcon"
 import SharedSkeletonLoader from "../Shared/SharedSkeletonLoader"
 
 function EligibleCTAContent({
-  currentAccountSigningMethod,
+  currentAccountSigner,
   claimAmount,
   isCurrentlyClaiming,
   hasAlreadyClaimed,
   hasError,
   handleCloseBanner,
 }: {
-  currentAccountSigningMethod: SigningMethod | null
+  currentAccountSigner: AccountSigner
   claimAmount: string
   isCurrentlyClaiming: boolean
   hasError: boolean
@@ -65,10 +68,10 @@ function EligibleCTAContent({
           </span>{" "}
           DOGGO
         </div>
-        {currentAccountSigningMethod ? (
-          <></>
-        ) : (
+        {currentAccountSigner === ReadOnlyAccountSigner ? (
           <div>Upgrade above to claim</div>
+        ) : (
+          <></>
         )}
       </div>
       {hasAlreadyClaimed ? (
@@ -88,12 +91,12 @@ function EligibleCTAContent({
         <Link
           to="/eligible"
           className={classNames({
-            no_click: !currentAccountSigningMethod || isCurrentlyClaiming,
+            no_click: isCurrentlyClaiming,
           })}
         >
           <div
             className={classNames("link_content", {
-              disabled: !currentAccountSigningMethod || isCurrentlyClaiming,
+              disabled: isCurrentlyClaiming,
             })}
           >
             <img
@@ -241,9 +244,7 @@ export default function OnboardingOpenClaimFlowBanner(): ReactElement {
   const claimAmount = useBackgroundSelector(selectEligibility).toString()
   const isClaimLoading = useBackgroundSelector(selectEligibilityLoading)
 
-  const currentAccountSigningMethod = useBackgroundSelector(
-    selectCurrentAccountSigningMethod
-  )
+  const currentAccountSigner = useBackgroundSelector(selectCurrentAccountSigner)
 
   const claimError = useBackgroundSelector(selectClaimError)
   const currentAccount = useBackgroundSelector(selectCurrentAccount)
@@ -284,7 +285,7 @@ export default function OnboardingOpenClaimFlowBanner(): ReactElement {
       <div className="banner">
         {hasSomethingToClaim ? (
           <EligibleCTAContent
-            currentAccountSigningMethod={currentAccountSigningMethod}
+            currentAccountSigner={currentAccountSigner}
             claimAmount={claimAmount}
             isCurrentlyClaiming={isCurrentlyClaiming}
             hasAlreadyClaimed={hasAlreadyClaimed}

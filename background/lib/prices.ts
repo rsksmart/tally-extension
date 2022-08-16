@@ -11,6 +11,7 @@ import {
 
 import { toFixedPoint } from "./fixed-point"
 import { isValidCoinGeckoPriceResponse } from "./validate"
+import { EVMNetwork } from "../networks"
 
 const COINGECKO_API_ROOT = "https://api.coingecko.com/api/v3"
 
@@ -47,47 +48,52 @@ export async function getPrices(
 
   const url = `${COINGECKO_API_ROOT}/simple/price?ids=${coinIds}&include_last_updated_at=true&vs_currencies=${currencySymbols}`
 
-  const json = await fetchJson(url)
-  // TODO fix loss of precision from json
-  // TODO: TESTME
+  try {
+    const json = await fetchJson(url)
+    // TODO fix loss of precision from json
+    // TODO: TESTME
 
-  if (!isValidCoinGeckoPriceResponse(json)) {
-    logger.warn(
-      "CoinGecko price response didn't validate, did the API change?",
-      json,
-      isValidCoinGeckoPriceResponse.errors
-    )
+    if (!isValidCoinGeckoPriceResponse(json)) {
+      logger.warn(
+        "CoinGecko price response didn't validate, did the API change?",
+        json,
+        isValidCoinGeckoPriceResponse.errors
+      )
 
+      return []
+    }
+
+    const resolutionTime = Date.now()
+    return assets.flatMap((asset) => {
+      const simpleCoinPrices = json[asset.metadata.coinGeckoID]
+
+      return vsCurrencies
+        .map<PricePoint | undefined>((currency) => {
+          const symbol = currency.symbol.toLowerCase()
+          const coinPrice = simpleCoinPrices?.[symbol]
+
+          if (coinPrice) {
+            // Scale amounts to the asset's decimals; if the asset is not fungible,
+            // assume 0 decimals, i.e. that this is a unit price.
+            const assetPrecision = "decimals" in asset ? asset.decimals : 0
+
+            return {
+              pair: [currency, asset],
+              amounts: [
+                toFixedPoint(coinPrice, currency.decimals),
+                10n ** BigInt(assetPrecision),
+              ],
+              time: resolutionTime,
+            }
+          }
+          return undefined
+        })
+        .filter((p): p is PricePoint => p !== undefined)
+    })
+  } catch (e) {
+    logger.warn("Coingecko price API throw an error: ", e)
     return []
   }
-
-  const resolutionTime = Date.now()
-  return assets.flatMap((asset) => {
-    const simpleCoinPrices = json[asset.metadata.coinGeckoID]
-
-    return vsCurrencies
-      .map<PricePoint | undefined>((currency) => {
-        const symbol = currency.symbol.toLowerCase()
-        const coinPrice = simpleCoinPrices?.[symbol]
-
-        if (coinPrice) {
-          // Scale amounts to the asset's decimals; if the asset is not fungible,
-          // assume 0 decimals, i.e. that this is a unit price.
-          const assetPrecision = "decimals" in asset ? asset.decimals : 0
-
-          return {
-            pair: [currency, asset],
-            amounts: [
-              toFixedPoint(coinPrice, currency.decimals),
-              10n ** BigInt(assetPrecision),
-            ],
-            time: resolutionTime,
-          }
-        }
-        return undefined
-      })
-      .filter((p): p is PricePoint => p !== undefined)
-  })
 }
 
 /*
@@ -97,51 +103,62 @@ export async function getPrices(
  * Tokens are specified by an array of contract addresses. Prices are returned
  * as the "unit price" of each single token in the fiat currency.
  */
-export async function getEthereumTokenPrices(
+export async function getTokenPrices(
   tokenAddresses: string[],
-  fiatCurrency: FiatCurrency
+  fiatCurrency: FiatCurrency,
+  network: EVMNetwork
 ): Promise<{
   [contractAddress: string]: UnitPricePoint<FungibleAsset>
 }> {
   const fiatSymbol = fiatCurrency.symbol
 
-  // TODO cover failed schema validation and http & network errors
-  const addys = tokenAddresses.join(",")
-  const url = `${COINGECKO_API_ROOT}/simple/token_price/ethereum?vs_currencies=${fiatSymbol}&include_last_updated_at=true&contract_addresses=${addys}`
-
-  const json = await fetchJson(url)
-
   const prices: {
     [index: string]: UnitPricePoint<FungibleAsset>
   } = {}
-  // TODO Improve typing with Ajv validation.
-  Object.entries(
-    json as {
-      [address: string]: { last_updated_at: number } & {
-        [currencySymbol: string]: string
+
+  // TODO cover failed schema validation
+  const addys = tokenAddresses.join(",")
+  const url = `${COINGECKO_API_ROOT}/simple/token_price/${network.coingeckoPlatformID}?vs_currencies=${fiatSymbol}&include_last_updated_at=true&contract_addresses=${addys}`
+
+  try {
+    const json = await fetchJson(url)
+
+    // TODO Improve typing with Ajv validation.
+    Object.entries(
+      json as {
+        [address: string]: { last_updated_at: number } & {
+          [currencySymbol: string]: string
+        }
       }
-    }
-  ).forEach(([address, priceDetails]) => {
-    // TODO parse this as a fixed decimal rather than a number. Will require
-    // custom JSON deserialization
-    const price: number = Number.parseFloat(
-      priceDetails[fiatSymbol.toLowerCase()]
-    )
-    if (!Number.isNaN(price)) {
-      prices[address] = {
-        unitPrice: {
-          asset: fiatCurrency,
-          amount: BigInt(Math.trunc(price * 10 ** fiatCurrency.decimals)),
-        },
-        time: priceDetails.last_updated_at,
-      }
-    } else {
-      logger.warn(
-        "Price for Ethereum token from CoinGecko cannot be parsed.",
-        address,
-        priceDetails
+    ).forEach(([address, priceDetails]) => {
+      // TODO parse this as a fixed decimal rather than a number. Will require
+      // custom JSON deserialization
+      const price: number = Number.parseFloat(
+        priceDetails[fiatSymbol.toLowerCase()]
       )
-    }
-  })
+      if (!Number.isNaN(price)) {
+        prices[address] = {
+          unitPrice: {
+            asset: fiatCurrency,
+            amount: BigInt(Math.trunc(price * 10 ** fiatCurrency.decimals)),
+          },
+          time: priceDetails.last_updated_at,
+        }
+      } else {
+        logger.warn(
+          "Price for Ethereum token from CoinGecko cannot be parsed.",
+          address,
+          priceDetails
+        )
+      }
+    })
+  } catch (err) {
+    logger.error(
+      "Error fetching price for tokens on network.",
+      tokenAddresses,
+      network,
+      err
+    )
+  }
   return prices
 }

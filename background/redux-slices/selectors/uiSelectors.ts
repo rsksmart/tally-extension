@@ -1,28 +1,12 @@
 import { createSelector } from "@reduxjs/toolkit"
 import { RootState } from ".."
-import { ActivityItem } from "../activities"
 
 // FIXME Make this configurable.
 const hardcodedMainCurrencySymbol = "USD"
 
-export const selectShowingActivityDetail = createSelector(
-  (state: RootState) => state.activities,
-  (state: RootState) => state.ui.showingActivityDetailID,
-  (activities, showingActivityDetailID) => {
-    return showingActivityDetailID === null
-      ? null
-      : Object.values(activities)
-          .map<ActivityItem | undefined>(
-            (accountActivities) =>
-              accountActivities.entities[showingActivityDetailID]
-          )
-          // Filter/slice lets us use map after instead of assigning a var.
-          .filter(
-            (activity): activity is ActivityItem =>
-              typeof activity !== "undefined"
-          )
-          .slice(0, 1)[0]
-  }
+export const selectCurrentNetwork = createSelector(
+  (state: RootState) => state.ui.selectedAccount.network,
+  (selectedNetwork) => selectedNetwork
 )
 
 export const selectCurrentAccount = createSelector(
@@ -32,6 +16,21 @@ export const selectCurrentAccount = createSelector(
     network,
     truncatedAddress: address.toLowerCase().slice(0, 7),
   })
+)
+
+export const selectShowingActivityDetail = createSelector(
+  (state: RootState) => state.activities,
+  selectCurrentAccount,
+  (state: RootState) => state.ui.showingActivityDetailID,
+  (activities, currentAccountOnNetwork, showingActivityDetailID) => {
+    if (!showingActivityDetailID) {
+      return null
+    }
+
+    return activities[currentAccountOnNetwork.address][
+      currentAccountOnNetwork.network.chainID
+    ].entities[showingActivityDetailID]
+  }
 )
 
 export const selectCurrentAddressNetwork = createSelector(

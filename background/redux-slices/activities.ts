@@ -18,6 +18,15 @@ const activitiesAdapter = createEntityAdapter<ActivityItem>({
         a.blockHeight === b.blockHeight) &&
       a.network.name === b.network.name
     ) {
+      // Sort dropped transactions after their corresponding successful ones.
+      if (a.nonce === b.nonce) {
+        if (a.blockHeight === null) {
+          return 1
+        }
+        if (b.blockHeight === null) {
+          return -1
+        }
+      }
       // Sort by nonce if a block height is missing or equal between two
       // transactions, as long as the two activities are on the same network;
       // otherwise, sort as before.
@@ -39,7 +48,9 @@ const activitiesAdapter = createEntityAdapter<ActivityItem>({
 })
 
 export type ActivitiesState = {
-  [address: string]: EntityState<ActivityItem>
+  [address: string]: {
+    [chainId: string]: EntityState<ActivityItem>
+  }
 }
 
 export const initialState: ActivitiesState = {}
@@ -80,13 +91,22 @@ const activitiesSlice = createSlice({
           toTruncated: truncateAddress(transaction.to ?? ""),
         }
 
-        if (typeof immerState[address] === "undefined") {
-          immerState[address] = activitiesAdapter.setOne(
-            activitiesAdapter.getInitialState(),
+        immerState[address] ??= {}
+
+        if (
+          typeof immerState[address][activityItem.network.chainID] ===
+          "undefined"
+        ) {
+          immerState[address][activityItem.network.chainID] =
+            activitiesAdapter.setOne(
+              activitiesAdapter.getInitialState(),
+              activityItem
+            )
+        } else {
+          activitiesAdapter.upsertOne(
+            immerState[address][activityItem.network.chainID],
             activityItem
           )
-        } else {
-          activitiesAdapter.upsertOne(immerState[address], activityItem)
         }
       })
     },

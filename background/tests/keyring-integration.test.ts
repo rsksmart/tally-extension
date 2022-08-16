@@ -51,7 +51,13 @@ const validTransactionRequests: {
     maxPriorityFeePerGas: 0n,
     gasLimit: 0n,
     chainID: "0",
-    network: { name: "none", chainID: "0", baseAsset: ETH, family: "EVM" },
+    network: {
+      name: "none",
+      chainID: "0",
+      baseAsset: ETH,
+      family: "EVM",
+      coingeckoPlatformID: "ethereum",
+    },
   },
 }
 
@@ -210,7 +216,9 @@ describe("KeyringService when initialized", () => {
       },
     ] = service.getKeyrings()
 
-    const newAddress = id ? await service.deriveAddress(id) : ""
+    const newAddress = id
+      ? await service.deriveAddress({ type: "keyring", keyringID: id })
+      : ""
     expect(newAddress).toEqual(
       expect.not.stringMatching(new RegExp(originalAddress, "i"))
     )

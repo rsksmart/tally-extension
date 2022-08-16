@@ -2,6 +2,7 @@ export type PermissionRequest = {
   key: string
   origin: string
   faviconUrl: string
+  chainID: string
   title: string
   state: "request" | "allow" | "deny"
   accountAddress: string
@@ -25,6 +26,7 @@ export type WindowRequestEvent = {
 
 export type PortResponseEvent = {
   id: string
+  jsonrpc: "2.0"
   result: unknown
 }
 
@@ -63,6 +65,8 @@ export type TallyInternalCommunication = {
 export type TallyConfigPayload = {
   method: "tally_getConfig"
   defaultWallet: boolean
+  chainId?: string
+  shouldReload?: boolean
   [prop: string]: unknown
 }
 

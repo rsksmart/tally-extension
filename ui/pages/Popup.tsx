@@ -12,11 +12,13 @@ import { Store } from "webext-redux"
 import { Provider } from "react-redux"
 import { TransitionGroup, CSSTransition } from "react-transition-group"
 import { isAllowedQueryParamPage } from "@tallyho/provider-bridge-shared"
-import { PERSIST_UI_LOCATION } from "@tallyho/tally-background/features"
 import { runtime } from "webextension-polyfill"
 import { popupMonitorPortName } from "@tallyho/tally-background/main"
-import { selectKeyringStatus } from "@tallyho/tally-background/redux-slices/selectors"
-import { selectIsTransactionPendingSignature } from "@tallyho/tally-background/redux-slices/transaction-construction"
+import {
+  selectCurrentAccountSigner,
+  selectKeyringStatus,
+} from "@tallyho/tally-background/redux-slices/selectors"
+import { selectIsTransactionPendingSignature } from "@tallyho/tally-background/redux-slices/selectors/transactionConstructionSelectors"
 import {
   useIsDappPopup,
   useBackgroundDispatch,
@@ -44,7 +46,7 @@ const pagePreferences = Object.fromEntries(
 function transformLocation(
   inputLocation: Location,
   isTransactionPendingSignature: boolean,
-  keyringStatus: "locked" | "unlocked" | "uninitialized"
+  needsKeyringUnlock: boolean
 ): Location {
   // The inputLocation is not populated with the actual query string — even though it should be
   // so I need to grab it from the window
@@ -60,8 +62,7 @@ function transformLocation(
   }
 
   if (isTransactionPendingSignature) {
-    pathname =
-      keyringStatus === "unlocked" ? "/sign-transaction" : "/keyring/unlock"
+    pathname = needsKeyringUnlock ? "/keyring/unlock" : "/sign-transaction"
   }
 
   return {
@@ -112,7 +113,13 @@ export function Main(): ReactElement {
   const isTransactionPendingSignature = useBackgroundSelector(
     selectIsTransactionPendingSignature
   )
+  const currentAccountSigner = useBackgroundSelector(selectCurrentAccountSigner)
   const keyringStatus = useBackgroundSelector(selectKeyringStatus)
+
+  const needsKeyringUnlock =
+    isTransactionPendingSignature &&
+    currentAccountSigner?.type === "keyring" &&
+    keyringStatus !== "unlocked"
 
   useConnectPopupMonitor()
 
@@ -127,13 +134,14 @@ export function Main(): ReactElement {
             const transformedLocation = transformLocation(
               routeProps.location,
               isTransactionPendingSignature,
-              keyringStatus
+              needsKeyringUnlock
             )
 
-            const normalizedPathname =
-              transformedLocation.pathname !== "/wallet"
-                ? transformedLocation.pathname
-                : "/"
+            const normalizedPathname = pagePreferences[
+              transformedLocation.pathname
+            ]
+              ? transformedLocation.pathname
+              : "/"
 
             // `initialEntries` needs to be a reversed version of route history
             // entities. Without avoiding the initial load, entries will keep reversing.
@@ -142,8 +150,7 @@ export function Main(): ReactElement {
             // the user or explicitly added. That said, we can still certainly "POP" via
             // history.goBack(). This case is not yet accounted for.
             if (
-              PERSIST_UI_LOCATION &&
-              pagePreferences[normalizedPathname].persistOnClose &&
+              pagePreferences[normalizedPathname]?.persistOnClose === true &&
               routeProps.history.action === "PUSH"
             ) {
               // @ts-expect-error TODO: fix the typing
@@ -181,17 +188,24 @@ export function Main(): ReactElement {
                     </div>
                     {/* @ts-expect-error TODO: fix the typing when the feature works */}
                     <Switch location={transformedLocation}>
-                      {pageList.map(({ path, Component, hasTopBar }) => {
-                        return (
-                          <Route path={path} key={path}>
-                            <CorePage hasTopBar={hasTopBar}>
-                              <ErrorBoundary FallbackComponent={ErrorFallback}>
-                                <Component location={transformedLocation} />
-                              </ErrorBoundary>
-                            </CorePage>
-                          </Route>
-                        )
-                      })}
+                      {pageList.map(
+                        ({ path, Component, hasTopBar, hasTabBar }) => {
+                          return (
+                            <Route path={path} key={path}>
+                              <CorePage
+                                hasTopBar={hasTopBar}
+                                hasTabBar={hasTabBar}
+                              >
+                                <ErrorBoundary
+                                  FallbackComponent={ErrorFallback}
+                                >
+                                  <Component location={transformedLocation} />
+                                </ErrorBoundary>
+                              </CorePage>
+                            </Route>
+                          )
+                        }
+                      )}
                     </Switch>
                   </div>
                 </CSSTransition>

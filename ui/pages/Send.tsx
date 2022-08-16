@@ -1,19 +1,21 @@
-import React, { ReactElement, useCallback, useState } from "react"
+import React, {
+  ReactElement,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react"
+import { useTranslation } from "react-i18next"
 import {
   selectCurrentAccount,
   selectCurrentAccountBalances,
+  selectCurrentAccountSigner,
   selectMainCurrencySymbol,
 } from "@tallyho/tally-background/redux-slices/selectors"
-import {
-  NetworkFeeSettings,
-  selectEstimatedFeesPerGas,
-  setFeeType,
-} from "@tallyho/tally-background/redux-slices/transaction-construction"
 import {
   FungibleAsset,
   isFungibleAssetAmount,
 } from "@tallyho/tally-background/assets"
-import { ETH } from "@tallyho/tally-background/constants"
 import {
   convertFixedPointNumber,
   parseToFixedPointNumber,
@@ -26,7 +28,7 @@ import { CompleteAssetAmount } from "@tallyho/tally-background/redux-slices/acco
 import { enrichAssetAmountWithMainCurrencyValues } from "@tallyho/tally-background/redux-slices/utils/asset-utils"
 import { useHistory, useLocation } from "react-router-dom"
 import classNames from "classnames"
-import NetworkSettingsChooser from "../components/NetworkFees/NetworkSettingsChooser"
+import { ReadOnlyAccountSigner } from "@tallyho/tally-background/services/signing"
 import SharedAssetInput from "../components/Shared/SharedAssetInput"
 import SharedBackButton from "../components/Shared/SharedBackButton"
 import SharedButton from "../components/Shared/SharedButton"
@@ -35,31 +37,44 @@ import {
   useBackgroundDispatch,
   useBackgroundSelector,
 } from "../hooks"
-import SharedSlideUpMenu from "../components/Shared/SharedSlideUpMenu"
-import FeeSettingsButton from "../components/NetworkFees/FeeSettingsButton"
 import SharedLoadingSpinner from "../components/Shared/SharedLoadingSpinner"
+import ReadOnlyNotice from "../components/Shared/ReadOnlyNotice"
 
 export default function Send(): ReactElement {
+  const { t } = useTranslation()
+  const isMounted = useRef(false)
   const location = useLocation<FungibleAsset>()
+  const currentAccount = useBackgroundSelector(selectCurrentAccount)
+  const currentAccountSigner = useBackgroundSelector(selectCurrentAccountSigner)
+
   const [selectedAsset, setSelectedAsset] = useState<FungibleAsset>(
-    location.state ?? ETH
+    location.state ?? currentAccount.network.baseAsset
   )
+
+  // Switch the asset being sent when switching between networks, but still use
+  // location.state on initial page render - if it exists
+  useEffect(() => {
+    if (!isMounted.current) {
+      isMounted.current = true
+    } else {
+      setSelectedAsset(currentAccount.network.baseAsset)
+    }
+    // This disable is here because we don't necessarily have euqality-by-reference
+    // due to how we persist the ui redux slice with webext-redux.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentAccount.network.baseAsset.symbol])
+
   const [destinationAddress, setDestinationAddress] = useState<
     string | undefined
   >(undefined)
   const [amount, setAmount] = useState("")
-  const [gasLimit, setGasLimit] = useState<bigint | undefined>(undefined)
   const [isSendingTransactionRequest, setIsSendingTransactionRequest] =
     useState(false)
   const [hasError, setHasError] = useState(false)
-  const [networkSettingsModalOpen, setNetworkSettingsModalOpen] =
-    useState(false)
 
   const history = useHistory()
 
   const dispatch = useBackgroundDispatch()
-  const estimatedFeesPerGas = useBackgroundSelector(selectEstimatedFeesPerGas)
-  const currentAccount = useBackgroundSelector(selectCurrentAccount)
   const balanceData = useBackgroundSelector(selectCurrentAccountBalances)
   const mainCurrencySymbol = useBackgroundSelector(selectMainCurrencySymbol)
 
@@ -116,7 +131,6 @@ export default function Send(): ReactElement {
             network: currentAccount.network,
           },
           assetAmount,
-          gasLimit,
         })
       )
     } finally {
@@ -124,26 +138,15 @@ export default function Send(): ReactElement {
     }
 
     history.push("/singleAsset", assetAmount.asset)
-  }, [
-    assetAmount,
-    currentAccount,
-    destinationAddress,
-    dispatch,
-    gasLimit,
-    history,
-  ])
-
-  const networkSettingsSaved = (networkSetting: NetworkFeeSettings) => {
-    setGasLimit(networkSetting.gasLimit)
-    dispatch(setFeeType(networkSetting.feeType))
-    setNetworkSettingsModalOpen(false)
-  }
+  }, [assetAmount, currentAccount, destinationAddress, dispatch, history])
 
   const {
     errorMessage: addressErrorMessage,
     isValidating: addressIsValidating,
     handleInputChange: handleAddressChange,
-  } = useAddressOrNameValidation(setDestinationAddress)
+  } = useAddressOrNameValidation((value) =>
+    setDestinationAddress(value?.address)
+  )
 
   return (
     <>
@@ -153,12 +156,13 @@ export default function Send(): ReactElement {
         </div>
         <h1 className="header">
           <span className="icon_activity_send_medium" />
-          <div className="title">Send Asset</div>
+          <div className="title">{t("wallet.sendAsset")}</div>
+          <ReadOnlyNotice isLite />
         </h1>
         <div className="form">
           <div className="form_input">
             <SharedAssetInput
-              label="Asset / Amount"
+              label={t("wallet.assetAmount")}
               onAssetSelect={setSelectedAsset}
               assetsAndAmounts={fungibleAssetAmounts}
               onAmountChange={(value, errorMessage) => {
@@ -177,7 +181,7 @@ export default function Send(): ReactElement {
             </div>
           </div>
           <div className="form_input send_to_field">
-            <label htmlFor="send_address">Send To:</label>
+            <label htmlFor="send_address">{t("wallet.sendTo")}</label>
             <input
               id="send_address"
               type="text"
@@ -201,29 +205,12 @@ export default function Send(): ReactElement {
               <></>
             )}
           </div>
-          <SharedSlideUpMenu
-            size="custom"
-            isOpen={networkSettingsModalOpen}
-            close={() => setNetworkSettingsModalOpen(false)}
-            customSize="488px"
-          >
-            <NetworkSettingsChooser
-              estimatedFeesPerGas={estimatedFeesPerGas}
-              onNetworkSettingsSave={networkSettingsSaved}
-            />
-          </SharedSlideUpMenu>
-          <div className="network_fee">
-            <p>Estimated network fee</p>
-            <FeeSettingsButton
-              onClick={() => setNetworkSettingsModalOpen(true)}
-            />
-          </div>
-          <div className="divider" />
           <div className="send_footer standard_width_padded">
             <SharedButton
               type="primary"
               size="large"
               isDisabled={
+                currentAccountSigner === ReadOnlyAccountSigner ||
                 Number(amount) === 0 ||
                 destinationAddress === undefined ||
                 hasError
@@ -232,7 +219,7 @@ export default function Send(): ReactElement {
               isFormSubmit
               isLoading={isSendingTransactionRequest}
             >
-              Send
+              {t("wallet.sendButton")}
             </SharedButton>
           </div>
         </div>
@@ -247,7 +234,7 @@ export default function Send(): ReactElement {
             margin-right: 8px;
           }
           .title {
-            width: 113px;
+            flex-grow: 1;
             height: 32px;
             color: #ffffff;
             font-size: 22px;
@@ -267,16 +254,13 @@ export default function Send(): ReactElement {
             margin-top: 30px;
           }
           .form_input {
-            margin-bottom: 22px;
+            margin-bottom: 14px;
           }
-
+          .form {
+            margin-top: 20px;
+          }
           .label_right {
             margin-right: 6px;
-          }
-          .divider {
-            width: 384px;
-            border-bottom: 1px solid #000000;
-            margin-left: -16px;
           }
           .label {
             margin-bottom: 6px;
@@ -316,6 +300,9 @@ export default function Send(): ReactElement {
             background-color: var(--green-95);
             padding: 0px 16px;
           }
+          input#send_address::placeholder {
+            color: var(--green-40);
+          }
           input#send_address ~ .error {
             color: var(--error);
             font-weight: 500;
@@ -338,11 +325,6 @@ export default function Send(): ReactElement {
             justify-content: flex-end;
             margin-top: 21px;
             padding-bottom: 20px;
-          }
-          .network_fee {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
           }
         `}
       </style>

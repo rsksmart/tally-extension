@@ -1,8 +1,10 @@
 import { AddressOnNetwork, NameOnNetwork } from "../../../accounts"
-import { ETHEREUM } from "../../../constants"
+import { ETHEREUM, POLYGON } from "../../../constants"
 import { isDefined } from "../../../lib/utils/type-guards"
 import { sameNetwork } from "../../../networks"
 import { NameResolver } from "../name-resolver"
+
+const UNS_SUPPORTED_NETWORKS = [ETHEREUM, POLYGON]
 
 /**
  * Lookup a UNS domain name and fetch the owners address
@@ -78,7 +80,12 @@ export default function unsResolver(): NameResolver<"UNS"> {
       return true
     },
     canAttemptAddressResolution({ name, network }: NameOnNetwork): boolean {
-      return sameNetwork(network, ETHEREUM) && isValidUNSDomainName(name)
+      return (
+        isValidUNSDomainName(name) &&
+        UNS_SUPPORTED_NETWORKS.some((supportedNetwork) =>
+          sameNetwork(network, supportedNetwork)
+        )
+      )
     },
 
     async lookUpAddressForName({

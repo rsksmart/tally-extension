@@ -1,31 +1,55 @@
 import React, { ReactElement, useState } from "react"
 
 type VerticalPosition = "top" | "bottom"
+type HorizontalPosition = "left" | "center" | "right"
 
 interface Props {
   verticalPosition?: VerticalPosition
+  horizontalPosition?: HorizontalPosition
   width: number
+  height?: number
   children: React.ReactNode
-  IconComponent?: () => ReactElement
+  // TODO: find a better way to tell the IconComponent that the tooltip it open
+  IconComponent?: ({
+    isShowingTooltip,
+  }: {
+    isShowingTooltip: boolean
+  }) => ReactElement
 }
 
-function getHorizontalPosition(width: number) {
-  return `right: -${width / 2 + 4}px;`
+function getHorizontalPosition(horizontal: HorizontalPosition, width: number) {
+  switch (horizontal) {
+    case "center":
+      return `right: -${width / 2 + 4}px;`
+    case "right":
+      return `right: -${width + 8}px;`
+    case "left":
+      return `left: -${width + 8}px;`
+    default:
+      return ""
+  }
 }
 
-function getVerticalPosition(vertical: VerticalPosition) {
+function getVerticalPosition(vertical: VerticalPosition, height: number) {
   switch (vertical) {
     case "bottom":
-      return "top: 20px; margin-top: 5px;"
+      return `top: ${height}px; margin-top: 5px;`
     case "top":
-      return "bottom: 20px; margin-bottom: 5px;"
+      return `bottom: ${height}px; margin-bottom: 5px;`
     default:
       return ""
   }
 }
 
 export default function SharedTooltip(props: Props): ReactElement {
-  const { children, verticalPosition = "bottom", width, IconComponent } = props
+  const {
+    children,
+    verticalPosition = "bottom",
+    horizontalPosition = "center",
+    width,
+    height = 20,
+    IconComponent,
+  } = props
   const [isShowingTooltip, setIsShowingTooltip] = useState(false)
 
   return (
@@ -38,7 +62,11 @@ export default function SharedTooltip(props: Props): ReactElement {
         setIsShowingTooltip(false)
       }}
     >
-      {IconComponent ? <IconComponent /> : <div className="info_icon" />}
+      {IconComponent ? (
+        <IconComponent isShowingTooltip={isShowingTooltip} />
+      ) : (
+        <div className="info_icon" />
+      )}
       {isShowingTooltip ? <div className="tooltip">{children}</div> : null}
       <style jsx>
         {`
@@ -69,8 +97,8 @@ export default function SharedTooltip(props: Props): ReactElement {
             line-height: 20px;
             border-radius: 3px;
             padding: 12px;
-            ${getVerticalPosition(verticalPosition)}
-            ${getHorizontalPosition(width)}
+            ${getVerticalPosition(verticalPosition, height)}
+            ${getHorizontalPosition(horizontalPosition, width)}
           }
         `}
       </style>

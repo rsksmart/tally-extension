@@ -4,30 +4,49 @@ import {
   ExpectedSigningData,
   SignDataMessageType,
   SignDataRequest,
-  SigningMethod,
   SignTypedDataRequest,
 } from "../utils/signing"
 import { createBackgroundAsyncThunk } from "./utils"
 import { EnrichedSignTypedDataRequest } from "../services/enrichment"
-import { EIP712TypedData, HexString } from "../types"
+import { EIP712TypedData } from "../types"
+import { AddressOnNetwork } from "../accounts"
+import { AccountSigner } from "../services/signing"
+import {
+  EIP1559TransactionRequest,
+  LegacyEVMTransactionRequest,
+} from "../networks"
 
-type SignOperation<T> = {
+/**
+ * The different types of SignOperations that can be executed. These types
+ * correspond to the signature requests that they carry.
+ */
+export type SignOperationType =
+  | SignDataRequest
+  | SignTypedDataRequest
+  | EIP1559TransactionRequest
+  | LegacyEVMTransactionRequest
+
+/**
+ * A request for a signing operation carrying the AccountSigner whose signature
+ * is requested and the request itself.
+ */
+export type SignOperation<T extends SignOperationType> = {
   request: T
-  signingMethod: SigningMethod
+  accountSigner: AccountSigner
 }
 
 type Events = {
   requestSignTypedData: {
     typedData: EIP712TypedData
-    account: HexString
-    signingMethod: SigningMethod
+    account: AddressOnNetwork
+    accountSigner: AccountSigner
   }
   requestSignData: {
     signingData: ExpectedSigningData
     messageType: SignDataMessageType
     rawSigningData: string
-    account: HexString
-    signingMethod: SigningMethod
+    account: AddressOnNetwork
+    accountSigner: AccountSigner
   }
   signatureRejected: never
 }
@@ -55,13 +74,13 @@ export const signTypedData = createBackgroundAsyncThunk(
   async (data: SignOperation<SignTypedDataRequest>) => {
     const {
       request: { account, typedData },
-      signingMethod,
+      accountSigner,
     } = data
 
     await signingSliceEmitter.emit("requestSignTypedData", {
       typedData,
       account,
-      signingMethod,
+      accountSigner,
     })
   }
 )
@@ -71,14 +90,14 @@ export const signData = createBackgroundAsyncThunk(
   async (data: SignOperation<SignDataRequest>) => {
     const {
       request: { account, signingData, rawSigningData, messageType },
-      signingMethod,
+      accountSigner,
     } = data
     await signingSliceEmitter.emit("requestSignData", {
       rawSigningData,
       signingData,
       account,
       messageType,
-      signingMethod,
+      accountSigner,
     })
   }
 )

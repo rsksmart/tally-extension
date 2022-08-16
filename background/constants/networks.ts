@@ -1,13 +1,12 @@
 import { EVMNetwork, Network } from "../networks"
 import { BTC, ETH, MATIC } from "./currencies"
 
-// TODO integrate this with /api/networks
-
 export const ETHEREUM: EVMNetwork = {
   name: "Ethereum",
   baseAsset: ETH,
   chainID: "1",
   family: "EVM",
+  coingeckoPlatformID: "ethereum",
 }
 
 export const POLYGON: EVMNetwork = {
@@ -15,13 +14,15 @@ export const POLYGON: EVMNetwork = {
   baseAsset: MATIC,
   chainID: "137",
   family: "EVM",
+  coingeckoPlatformID: "polygon-pos",
 }
 
 export const ARBITRUM_ONE: EVMNetwork = {
-  name: "Arbitrum One",
+  name: "Arbitrum",
   baseAsset: ETH,
   chainID: "42161",
   family: "EVM",
+  coingeckoPlatformID: "arbitrum-one",
 }
 
 export const OPTIMISM: EVMNetwork = {
@@ -29,6 +30,7 @@ export const OPTIMISM: EVMNetwork = {
   baseAsset: ETH,
   chainID: "10",
   family: "EVM",
+  coingeckoPlatformID: "optimistic-ethereum",
 }
 
 export const ROPSTEN: EVMNetwork = {
@@ -36,6 +38,7 @@ export const ROPSTEN: EVMNetwork = {
   baseAsset: ETH,
   chainID: "3",
   family: "EVM",
+  coingeckoPlatformID: "ethereum",
 }
 
 export const RINKEBY: EVMNetwork = {
@@ -43,6 +46,7 @@ export const RINKEBY: EVMNetwork = {
   baseAsset: ETH,
   chainID: "4",
   family: "EVM",
+  coingeckoPlatformID: "ethereum",
 }
 
 export const GOERLI: EVMNetwork = {
@@ -50,6 +54,7 @@ export const GOERLI: EVMNetwork = {
   baseAsset: ETH,
   chainID: "5",
   family: "EVM",
+  coingeckoPlatformID: "ethereum",
 }
 
 export const KOVAN: EVMNetwork = {
@@ -57,12 +62,14 @@ export const KOVAN: EVMNetwork = {
   baseAsset: ETH,
   chainID: "42",
   family: "EVM",
+  coingeckoPlatformID: "ethereum",
 }
 
 export const BITCOIN: Network = {
   name: "Bitcoin",
   baseAsset: BTC,
   family: "BTC",
+  coingeckoPlatformID: "bitcoin",
 }
 
 export const FORK: EVMNetwork = {
@@ -70,35 +77,17 @@ export const FORK: EVMNetwork = {
   baseAsset: ETH,
   chainID: process.env.MAINNET_FORK_CHAIN_ID ?? "1337",
   family: "EVM",
+  coingeckoPlatformID: "ethereum",
 }
 
-export const EVM_MAIN_NETWORKS = [ETHEREUM, ARBITRUM_ONE, OPTIMISM, POLYGON]
-
-export const EVM_TEST_NETWORKS = [ROPSTEN, RINKEBY, GOERLI, KOVAN]
-
-const EVM_NETWORKS: EVMNetwork[] = EVM_MAIN_NETWORKS.concat(EVM_TEST_NETWORKS)
-
-// A lot of code currently relies on chain id uniqueness per EVM network;
-// explode if that is not maintained.
-if (
-  new Set(EVM_NETWORKS.map(({ chainID }) => chainID)).size < EVM_NETWORKS.length
-) {
-  throw new Error("Duplicate chain ID in EVM networks.")
-}
-
-export const EVM_NETWORKS_BY_CHAIN_ID: { [chainID: string]: EVMNetwork } =
-  EVM_NETWORKS.reduce(
-    (agg, network) => ({
-      ...agg,
-      [network.chainID]: network,
-    }),
-    {}
-  )
-
-export const NETWORKS = [BITCOIN].concat(EVM_NETWORKS)
-
-// A lot of code currently relies on network name uniqueness; explode if that
-// is not maintained.
-if (new Set(NETWORKS.map(({ name }) => name)).size < NETWORKS.length) {
-  throw new Error("Duplicate chain name in networks.")
+export const NETWORK_BY_CHAIN_ID = {
+  [ETHEREUM.chainID]: ETHEREUM,
+  [POLYGON.chainID]: POLYGON,
+  [ARBITRUM_ONE.chainID]: ARBITRUM_ONE,
+  [OPTIMISM.chainID]: OPTIMISM,
+  [ROPSTEN.chainID]: ROPSTEN,
+  [RINKEBY.chainID]: RINKEBY,
+  [GOERLI.chainID]: GOERLI,
+  [KOVAN.chainID]: KOVAN,
+  [FORK.chainID]: FORK,
 }

@@ -1,77 +1,115 @@
-import { ESTIMATED_FEE_MULTIPLIERS_BY_TYPE } from "@tallyho/tally-background/constants/network-fees"
+import React, { ReactElement } from "react"
 import {
   truncateDecimalAmount,
   weiToGwei,
 } from "@tallyho/tally-background/lib/utils"
+import { CUSTOM_GAS_SELECT } from "@tallyho/tally-background/features"
+import { NetworkFeeSettings } from "@tallyho/tally-background/redux-slices/transaction-construction"
 import {
-  NetworkFeeSettings,
   selectDefaultNetworkFeeSettings,
   selectEstimatedFeesPerGas,
   selectFeeType,
-} from "@tallyho/tally-background/redux-slices/transaction-construction"
-import { selectMainCurrencyPricePoint } from "@tallyho/tally-background/redux-slices/selectors"
+  selectTransactionMainCurrencyPricePoint,
+} from "@tallyho/tally-background/redux-slices/selectors/transactionConstructionSelectors"
+import { selectCurrentNetwork } from "@tallyho/tally-background/redux-slices/selectors"
 import { enrichAssetAmountWithMainCurrencyValues } from "@tallyho/tally-background/redux-slices/utils/asset-utils"
-import { PricePoint } from "@tallyho/tally-background/assets"
-import React, { ReactElement } from "react"
+import {
+  PricePoint,
+  unitPricePointForPricePoint,
+  assetAmountToDesiredDecimals,
+} from "@tallyho/tally-background/assets"
 import { useBackgroundSelector } from "../../hooks"
+import FeeSettingsTextDeprecated from "./FeeSettingsTextDeprecated"
 
 const getFeeDollarValue = (
   currencyPrice: PricePoint | undefined,
-  networkSettings: NetworkFeeSettings
+  gasLimit?: bigint,
+  estimatedSpendPerGas?: bigint
 ): string | undefined => {
-  const {
-    values: { maxFeePerGas, maxPriorityFeePerGas },
-  } = networkSettings
-  const gasLimit = networkSettings.gasLimit ?? networkSettings.suggestedGasLimit
+  if (estimatedSpendPerGas) {
+    if (!gasLimit || !currencyPrice) return undefined
 
-  if (!gasLimit || !currencyPrice) return undefined
+    const [asset] = currencyPrice.pair
 
-  const [asset] = currencyPrice.pair
-  const { localizedMainCurrencyAmount } =
-    enrichAssetAmountWithMainCurrencyValues(
-      {
-        asset,
-        amount: (maxFeePerGas + maxPriorityFeePerGas) * gasLimit,
-      },
-      currencyPrice,
-      2
-    )
+    let currencyCostPerBaseAsset
+    const unitPricePoint = unitPricePointForPricePoint(currencyPrice)
 
-  return localizedMainCurrencyAmount
+    if (unitPricePoint) {
+      currencyCostPerBaseAsset = assetAmountToDesiredDecimals(
+        unitPricePoint.unitPrice,
+        2
+      )
+    }
+
+    const { localizedMainCurrencyAmount } =
+      enrichAssetAmountWithMainCurrencyValues(
+        {
+          asset,
+          amount: estimatedSpendPerGas * gasLimit,
+        },
+        currencyPrice,
+        currencyCostPerBaseAsset && currencyCostPerBaseAsset < 1 ? 4 : 2
+      )
+    return localizedMainCurrencyAmount
+  }
+  return undefined
 }
 
-export default function FeeSettingsText(): ReactElement {
+export default function FeeSettingsText({
+  customNetworkSetting,
+}: {
+  customNetworkSetting?: NetworkFeeSettings
+}): ReactElement {
+  const currentNetwork = useBackgroundSelector(selectCurrentNetwork)
   const estimatedFeesPerGas = useBackgroundSelector(selectEstimatedFeesPerGas)
   const selectedFeeType = useBackgroundSelector(selectFeeType)
-  const networkSettings = useBackgroundSelector(selectDefaultNetworkFeeSettings)
+  let networkSettings = useBackgroundSelector(selectDefaultNetworkFeeSettings)
+  networkSettings = customNetworkSetting ?? networkSettings
+  const baseFeePerGas =
+    useBackgroundSelector((state) => {
+      return state.networks.evm[currentNetwork.chainID].baseFeePerGas
+    }) ??
+    networkSettings.values?.baseFeePerGas ??
+    0n
+
   const mainCurrencyPricePoint = useBackgroundSelector(
-    selectMainCurrencyPricePoint
+    selectTransactionMainCurrencyPricePoint
   )
+  const gasLimit = networkSettings.gasLimit ?? networkSettings.suggestedGasLimit
+  const estimatedSpendPerGas =
+    baseFeePerGas + networkSettings.values.maxPriorityFeePerGas
 
   const estimatedGweiAmount =
     typeof estimatedFeesPerGas !== "undefined" &&
     typeof selectedFeeType !== "undefined"
-      ? truncateDecimalAmount(
-          weiToGwei(
-            (estimatedFeesPerGas?.baseFeePerGas *
-              ESTIMATED_FEE_MULTIPLIERS_BY_TYPE[selectedFeeType]) /
-              10n
-          ),
-          0
-        )
+      ? truncateDecimalAmount(weiToGwei(estimatedSpendPerGas ?? 0n), 0)
       : ""
 
   if (typeof estimatedFeesPerGas === "undefined") return <div>Unknown</div>
 
   const gweiValue = `${estimatedGweiAmount} Gwei`
-  const dollarValue = getFeeDollarValue(mainCurrencyPricePoint, networkSettings)
+  const dollarValue = getFeeDollarValue(
+    mainCurrencyPricePoint,
+    gasLimit,
+    estimatedSpendPerGas
+  )
+
+  if (!CUSTOM_GAS_SELECT) {
+    return <FeeSettingsTextDeprecated />
+  }
 
   if (!dollarValue) return <div>~{gweiValue}</div>
 
   return (
     <div>
-      ~${dollarValue}
-      <span className="fee_gwei">({gweiValue})</span>
+      {!gasLimit && CUSTOM_GAS_SELECT ? (
+        <>TBD</>
+      ) : (
+        <>
+          ~${dollarValue}
+          <span className="fee_gwei">({gweiValue})</span>
+        </>
+      )}
       <style jsx>{`
         .fee_gwei {
           color: var(--green-60);

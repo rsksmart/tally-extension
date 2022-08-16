@@ -11,7 +11,6 @@ import {
   SmartContractAmount,
   SmartContractFungibleAsset,
 } from "../assets"
-import { ETH } from "../constants"
 import { AnyEVMTransaction, EVMNetwork, SmartContract } from "../networks"
 import {
   isValidAlchemyAssetTransferResponse,
@@ -50,15 +49,14 @@ export async function getAssetTransfers(
     // excludeZeroValue: false,
   }
 
-  // Default Ethereum Mainnet categories per the documentation:
+  // Categories that are most important to us, supported both on Ethereum Mainnet and polygon
   // https://docs.alchemy.com/alchemy/enhanced-apis/transfers-api#alchemy_getassettransfers-ethereum-mainnet
-  let category = ["external", "internal", "token"]
+  const category = ["external", "erc20"]
 
-  if (addressOnNetwork.network.name !== "Ethereum") {
-    // Unfortunately even though "token" is supposed the default category for this API call - if the `category` property is omitted
-    // the api returns an error about the category "iternal" not being supported
+  if (addressOnNetwork.network.name === "Ethereum") {
+    // "internal" is supported only on Ethereum Mainnet and Goerli atm
     // https://docs.alchemy.com/alchemy/enhanced-apis/transfers-api#alchemy_getassettransfers-testnets-and-layer-2s
-    category = ["token"]
+    category.push("internal")
   }
   // TODO handle partial failure
   const rpcResponses = await Promise.all([
@@ -109,7 +107,7 @@ export async function getAssetTransfers(
         return null
       }
 
-      const asset = !transfer.rawContract.address
+      const asset = transfer.rawContract.address
         ? {
             contractAddress: transfer.rawContract.address,
             decimals: Number(BigInt(transfer.rawContract.decimal)),
@@ -290,4 +288,50 @@ export function transactionFromAlchemyWebsocketTransaction(
     asset: network.baseAsset,
     network,
   }
+}
+
+export type AlchemyNFTItem = {
+  error?: string
+  media: { gateway?: string }[]
+  id: {
+    tokenId: string
+  }
+  contract: { address: string }
+  title: string
+  chainID: number
+}
+
+/**
+ * Use Alchemy's getNFTs call to get a wallet's NFT holdings across collections.
+ *
+ * Note that pagination isn't supported in this wrapper, so any responses after
+ * 100 NFTs will be dropped.
+ *
+ * More information https://docs.alchemy.com/reference/getnfts
+ *
+ * @param addressOnNetwork the address whose NFT portfolio we're fetching and
+ *        the network it should happen on.
+ */
+export async function getNFTs({
+  address,
+  network,
+}: AddressOnNetwork): Promise<AlchemyNFTItem[]> {
+  // Today, only Polygon and Ethereum are supported
+  if (!["Polygon", "Ethereum"].includes(network.name)) {
+    return []
+  }
+
+  const requestUrl = new URL(
+    `https://${
+      network.name === "Polygon" ? "polygon-mainnet.g" : "eth-mainnet"
+    }.alchemyapi.io/nft/v2/${process.env.ALCHEMY_KEY}/getNFTs/`
+  )
+  requestUrl.searchParams.set("owner", address)
+  requestUrl.searchParams.set("filters[]", "SPAM")
+
+  // TODO validate data with ajv
+  const result = await (await fetch(requestUrl.toString())).json()
+  return result.ownedNfts
+    .filter((nft: AlchemyNFTItem) => typeof nft.error === "undefined")
+    .map((nft: AlchemyNFTItem) => ({ ...nft, chainID: network.chainID }))
 }

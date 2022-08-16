@@ -1,24 +1,34 @@
 import React, { ReactElement, useState } from "react"
 import {
   rejectTransactionSignature,
-  selectIsTransactionLoaded,
-  selectTransactionData,
   signTransaction,
 } from "@tallyho/tally-background/redux-slices/transaction-construction"
-import { getAccountTotal } from "@tallyho/tally-background/redux-slices/selectors"
+import {
+  selectIsTransactionLoaded,
+  selectTransactionData,
+} from "@tallyho/tally-background/redux-slices/selectors/transactionConstructionSelectors"
+import {
+  getAccountTotal,
+  selectCurrentNetwork,
+} from "@tallyho/tally-background/redux-slices/selectors"
+import { USE_UPDATED_SIGNING_UI } from "@tallyho/tally-background/features"
+import { ReadOnlyAccountSigner } from "@tallyho/tally-background/services/signing"
 import {
   useBackgroundDispatch,
   useBackgroundSelector,
-  useIsSigningMethodLocked,
+  useIsSignerLocked,
 } from "../hooks"
 import SignTransactionContainer from "../components/SignTransaction/SignTransactionContainer"
 import SignTransactionInfoProvider from "../components/SignTransaction/SignTransactionInfoProvider"
 import SignTransactionPanelSwitcher from "../components/SignTransaction/SignTransactionPanelSwitcher"
 import SignTransactionPanelCombined from "../components/SignTransaction/SignTransactionPanelCombined"
+import Signing from "../components/Signing"
+import SignTransactionLoader from "../components/SignTransaction/SignTransactionLoader"
 
 export default function SignTransaction(): ReactElement {
   const dispatch = useBackgroundDispatch()
   const transactionDetails = useBackgroundSelector(selectTransactionData)
+  const currentNetwork = useBackgroundSelector(selectCurrentNetwork)
 
   const isTransactionDataReady = useBackgroundSelector(
     selectIsTransactionLoaded
@@ -26,16 +36,29 @@ export default function SignTransaction(): ReactElement {
 
   const signerAccountTotal = useBackgroundSelector((state) => {
     if (typeof transactionDetails !== "undefined") {
-      return getAccountTotal(state, transactionDetails.from)
+      return getAccountTotal(state, {
+        address: transactionDetails.from,
+        network: currentNetwork,
+      })
     }
     return undefined
   })
 
   const [isTransactionSigning, setIsTransactionSigning] = useState(false)
 
-  const signingMethod = signerAccountTotal?.signingMethod ?? null
+  const accountSigner = signerAccountTotal?.accountSigner ?? null
 
-  const isLocked = useIsSigningMethodLocked(signingMethod)
+  const isLocked = useIsSignerLocked(accountSigner)
+
+  if (accountSigner === null || transactionDetails === undefined) {
+    return <SignTransactionLoader />
+  }
+
+  if (USE_UPDATED_SIGNING_UI) {
+    return (
+      <Signing accountSigner={accountSigner} request={transactionDetails} />
+    )
+  }
 
   if (isLocked) return <></>
 
@@ -46,12 +69,13 @@ export default function SignTransaction(): ReactElement {
     if (
       isTransactionDataReady &&
       transactionDetails &&
-      signingMethod !== null
+      accountSigner &&
+      accountSigner !== ReadOnlyAccountSigner
     ) {
       dispatch(
         signTransaction({
-          transaction: transactionDetails,
-          method: signingMethod,
+          request: transactionDetails,
+          accountSigner,
         })
       )
       setIsTransactionSigning(true)
@@ -76,6 +100,7 @@ export default function SignTransaction(): ReactElement {
               <SignTransactionPanelSwitcher />
             )
           }
+          warnings={transactionDetails?.annotation?.warnings}
           isTransactionSigning={isTransactionSigning}
           isArbitraryDataSigningRequired={
             !!(transactionDetails?.input ?? false)

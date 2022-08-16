@@ -1,5 +1,4 @@
 import React, { ReactElement } from "react"
-import { EARN_COMING_SOON } from "@tallyho/tally-background/features"
 import Wallet from "../pages/Wallet"
 import SignTransaction from "../pages/SignTransaction"
 import SignData from "../pages/SignData"
@@ -14,16 +13,15 @@ import OnboardingInterstitialCreatePhrase from "../pages/Onboarding/OnboardingIn
 import Overview from "../pages/Overview"
 import SingleAsset from "../pages/SingleAsset"
 import Earn from "../pages/Earn"
-import ComingSoon from "../pages/ComingSoon"
 import EarnDeposit from "../pages/EarnDeposit"
-import Menu from "../pages/Menu"
+import Menu from "../pages/Settings"
 import Send from "../pages/Send"
 import Swap from "../pages/Swap"
 import DAppPermissionRequest from "../pages/DAppConnectRequest"
 import KeyringUnlock from "../components/Keyring/KeyringUnlock"
 import KeyringSetPassword from "../components/Keyring/KeyringSetPassword"
 import Eligible from "../pages/Claiming/Eligible"
-import MenuExportLogs from "../pages/Menu/MenuExportLogs"
+import SettingsExportLogs from "../pages/Settings/SettingsExportLogs"
 
 interface PageList {
   path: string
@@ -123,20 +121,20 @@ const pageList: PageList[] = [
   },
   {
     path: "/earn",
-    Component: EARN_COMING_SOON ? ComingSoon : Earn,
+    Component: Earn,
     hasTabBar: true,
     hasTopBar: true,
     persistOnClose: true,
   },
   {
-    path: "/menu/export-logs",
-    Component: MenuExportLogs,
+    path: "/settings/export-logs",
+    Component: SettingsExportLogs,
     hasTabBar: true,
     hasTopBar: false,
     persistOnClose: true,
   },
   {
-    path: "/menu",
+    path: "/settings",
     Component: Menu,
     hasTabBar: true,
     hasTopBar: false,

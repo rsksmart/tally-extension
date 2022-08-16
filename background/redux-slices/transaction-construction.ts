@@ -1,4 +1,4 @@
-import { createSlice, createSelector } from "@reduxjs/toolkit"
+import { createSlice } from "@reduxjs/toolkit"
 import Emittery from "emittery"
 import { FORK } from "../constants"
 import {
@@ -13,15 +13,19 @@ import {
   BlockEstimate,
   BlockPrices,
   EIP1559TransactionRequest,
-  SignedEVMTransaction,
+  EVMNetwork,
+  isEIP1559TransactionRequest,
+  LegacyEVMTransactionRequest,
+  SignedTransaction,
+  TransactionRequest,
 } from "../networks"
 import {
-  EnrichedEIP1559TransactionRequest,
   EnrichedEVMTransactionSignatureRequest,
+  EnrichedEVMTransactionRequest,
 } from "../services/enrichment"
-import { SigningMethod } from "../utils/signing"
 
 import { createBackgroundAsyncThunk } from "./utils"
+import { SignOperation } from "./signing"
 
 export const enum TransactionConstructionStatus {
   Idle = "idle",
@@ -37,6 +41,7 @@ export type NetworkFeeSettings = {
   values: {
     maxFeePerGas: bigint
     maxPriorityFeePerGas: bigint
+    baseFeePerGas?: bigint
   }
 }
 
@@ -44,59 +49,113 @@ export enum NetworkFeeTypeChosen {
   Regular = "regular",
   Express = "express",
   Instant = "instant",
+  Custom = "custom",
 }
 export type TransactionConstruction = {
   status: TransactionConstructionStatus
-  transactionRequest?: EnrichedEIP1559TransactionRequest
-  signedTransaction?: SignedEVMTransaction
+  transactionRequest?: EnrichedEVMTransactionRequest
+  signedTransaction?: SignedTransaction
   broadcastOnSign?: boolean
   transactionLikelyFails?: boolean
-  estimatedFeesPerGas: EstimatedFeesPerGas | undefined
+  estimatedFeesPerGas: { [chainID: string]: EstimatedFeesPerGas | undefined }
+  customFeesPerGas?: EstimatedFeesPerGas["custom"]
   lastGasEstimatesRefreshed: number
   feeTypeSelected: NetworkFeeTypeChosen
 }
 
 export type EstimatedFeesPerGas = {
-  baseFeePerGas: bigint
-  instant: BlockEstimate | undefined
-  express: BlockEstimate | undefined
-  regular: BlockEstimate | undefined
+  baseFeePerGas?: bigint
+  maxPriorityFeePerGas?: bigint
+  maxFeePerGas?: bigint
+  instant?: BlockEstimate
+  express?: BlockEstimate
+  regular?: BlockEstimate
+  custom?: BlockEstimate
+}
+
+const defaultCustomGas = {
+  maxFeePerGas: 0n,
+  maxPriorityFeePerGas: 0n,
+  confidence: 0,
 }
 
 export const initialState: TransactionConstruction = {
   status: TransactionConstructionStatus.Idle,
   feeTypeSelected: NetworkFeeTypeChosen.Regular,
-  estimatedFeesPerGas: undefined,
+  estimatedFeesPerGas: {},
+  customFeesPerGas: defaultCustomGas,
   lastGasEstimatesRefreshed: Date.now(),
 }
 
-export interface SignatureRequest {
-  transaction: EIP1559TransactionRequest
-  method: SigningMethod
+export type Events = {
+  updateTransaction: EnrichedEVMTransactionSignatureRequest
+  requestSignature: SignOperation<TransactionRequest>
+  signatureRejected: never
+  broadcastSignedTransaction: SignedTransaction
 }
 
-export type Events = {
-  updateOptions: EnrichedEVMTransactionSignatureRequest
-  requestSignature: SignatureRequest
-  signatureRejected: never
-  broadcastSignedTransaction: SignedEVMTransaction
+export type GasOption = {
+  confidence: string
+  estimatedSpeed: string
+  type: NetworkFeeTypeChosen
+  estimatedGwei: string
+  maxPriorityGwei: string
+  maxGwei: string
+  dollarValue: string
+  estimatedFeePerGas: bigint // wei
+  baseMaxFeePerGas: bigint // wei
+  baseMaxGwei: string
+  maxFeePerGas: bigint // wei
+  maxPriorityFeePerGas: bigint // wei
 }
 
 export const emitter = new Emittery<Events>()
 
+const makeBlockEstimate = (
+  type: number,
+  estimatedFeesPerGas: BlockPrices
+): BlockEstimate => {
+  let maxFeePerGas = estimatedFeesPerGas.estimatedPrices.find(
+    (el) => el.confidence === type
+  )?.maxFeePerGas
+
+  if (typeof maxFeePerGas === "undefined") {
+    // Fallback
+    maxFeePerGas = estimatedFeesPerGas.baseFeePerGas
+  }
+
+  // Exaggerate differences between options
+  maxFeePerGas = (maxFeePerGas * MAX_FEE_MULTIPLIER[type]) / 10n
+
+  return {
+    maxFeePerGas,
+    confidence: type,
+    maxPriorityFeePerGas:
+      estimatedFeesPerGas.estimatedPrices.find((el) => el.confidence === type)
+        ?.maxPriorityFeePerGas ?? 0n,
+    price:
+      estimatedFeesPerGas.estimatedPrices.find((el) => el.confidence === type)
+        ?.price ?? 0n,
+  }
+}
+
 // Async thunk to pass transaction options from the store to the background via an event
-export const updateTransactionOptions = createBackgroundAsyncThunk(
-  "transaction-construction/update-options",
+export const updateTransactionData = createBackgroundAsyncThunk(
+  "transaction-construction/update-transaction",
   async (options: EnrichedEVMTransactionSignatureRequest) => {
-    await emitter.emit("updateOptions", options)
+    await emitter.emit("updateTransaction", options)
   }
 )
 
 export const signTransaction = createBackgroundAsyncThunk(
   "transaction-construction/sign",
-  async (request: SignatureRequest) => {
+  async (
+    request: SignOperation<
+      EIP1559TransactionRequest | LegacyEVMTransactionRequest
+    >
+  ) => {
     if (USE_MAINNET_FORK) {
-      request.transaction.chainID = FORK.chainID
+      request.request.chainID = FORK.chainID
     }
 
     await emitter.emit("requestSignature", request)
@@ -113,25 +172,47 @@ const transactionSlice = createSlice({
         payload: { transactionRequest, transactionLikelyFails },
       }: {
         payload: {
-          transactionRequest: EIP1559TransactionRequest
+          transactionRequest: TransactionRequest
           transactionLikelyFails: boolean
         }
       }
-    ) => ({
-      ...state,
-      status: TransactionConstructionStatus.Loaded,
-      signedTransaction: undefined,
-      transactionRequest: {
-        ...transactionRequest,
-        maxFeePerGas:
-          state.estimatedFeesPerGas?.[state.feeTypeSelected]?.maxFeePerGas ??
-          transactionRequest.maxFeePerGas,
-        maxPriorityFeePerGas:
-          state.estimatedFeesPerGas?.[state.feeTypeSelected]
-            ?.maxPriorityFeePerGas ?? transactionRequest.maxPriorityFeePerGas,
-      },
-      transactionLikelyFails,
-    }),
+    ) => {
+      const newState = {
+        ...state,
+        status: TransactionConstructionStatus.Loaded,
+        signedTransaction: undefined,
+        transactionRequest: {
+          ...transactionRequest,
+        },
+        transactionLikelyFails,
+      }
+
+      if (
+        // We use two guards here to satisfy the compiler but due to the spread
+        // above we know that if one is an EIP1559 then the other one must be too
+        isEIP1559TransactionRequest(newState.transactionRequest) &&
+        isEIP1559TransactionRequest(transactionRequest)
+      ) {
+        const estimatedMaxFeePerGas =
+          state.estimatedFeesPerGas?.[transactionRequest.network.chainID]?.[
+            state.feeTypeSelected
+          ]?.maxFeePerGas
+
+        newState.transactionRequest.maxFeePerGas =
+          estimatedMaxFeePerGas ?? transactionRequest.maxFeePerGas
+
+        const estimatedMaxPriorityFeePerGas =
+          state.estimatedFeesPerGas?.[transactionRequest.network.chainID]?.[
+            state.feeTypeSelected
+          ]?.maxPriorityFeePerGas
+
+        newState.transactionRequest.maxPriorityFeePerGas =
+          estimatedMaxPriorityFeePerGas ??
+          transactionRequest.maxPriorityFeePerGas
+      }
+
+      return newState
+    },
     clearTransactionState: (
       state,
       { payload }: { payload: TransactionConstructionStatus }
@@ -142,16 +223,40 @@ const transactionSlice = createSlice({
       feeTypeSelected: state.feeTypeSelected ?? NetworkFeeTypeChosen.Regular,
       broadcastOnSign: false,
       signedTransaction: undefined,
+      customFeesPerGas: state.customFeesPerGas,
     }),
     setFeeType: (
-      state,
+      immerState,
       { payload }: { payload: NetworkFeeTypeChosen }
-    ): TransactionConstruction => ({
-      ...state,
-      feeTypeSelected: payload,
-    }),
+    ) => {
+      immerState.feeTypeSelected = payload
 
-    signed: (state, { payload }: { payload: SignedEVMTransaction }) => ({
+      if (immerState.transactionRequest) {
+        const selectedFeesPerGas =
+          immerState.estimatedFeesPerGas?.[
+            immerState.transactionRequest.network.chainID
+          ]?.[immerState.feeTypeSelected] ?? immerState.customFeesPerGas
+
+        immerState.transactionRequest = {
+          ...immerState.transactionRequest,
+        }
+
+        if (
+          immerState.transactionRequest &&
+          isEIP1559TransactionRequest(immerState.transactionRequest)
+        ) {
+          immerState.transactionRequest.maxFeePerGas =
+            selectedFeesPerGas?.maxFeePerGas ??
+            immerState.transactionRequest.maxFeePerGas
+
+          immerState.transactionRequest.maxFeePerGas =
+            selectedFeesPerGas?.maxPriorityFeePerGas ??
+            immerState.transactionRequest.maxPriorityFeePerGas
+        }
+      }
+    },
+
+    signed: (state, { payload }: { payload: SignedTransaction }) => ({
       ...state,
       status: TransactionConstructionStatus.Signed,
       signedTransaction: payload,
@@ -166,64 +271,44 @@ const transactionSlice = createSlice({
     }),
     estimatedFeesPerGas: (
       immerState,
-      { payload: estimatedFeesPerGas }: { payload: BlockPrices }
+      {
+        payload: { estimatedFeesPerGas, network },
+      }: { payload: { estimatedFeesPerGas: BlockPrices; network: EVMNetwork } }
     ) => {
-      return {
-        ...immerState,
-        estimatedFeesPerGas: {
+      immerState.estimatedFeesPerGas = {
+        ...(immerState.estimatedFeesPerGas ?? {}),
+        [network.chainID]: {
           baseFeePerGas: estimatedFeesPerGas.baseFeePerGas,
-          instant: {
-            maxFeePerGas:
-              (estimatedFeesPerGas.baseFeePerGas *
-                MAX_FEE_MULTIPLIER[INSTANT]) /
-              10n,
-            confidence: INSTANT,
-            maxPriorityFeePerGas:
-              estimatedFeesPerGas.estimatedPrices.find(
-                (el) => el.confidence === INSTANT
-              )?.maxPriorityFeePerGas ?? 0n,
-            price:
-              estimatedFeesPerGas.estimatedPrices.find(
-                (el) => el.confidence === INSTANT
-              )?.price ?? 0n,
-          },
-          express: {
-            maxFeePerGas:
-              (estimatedFeesPerGas.baseFeePerGas *
-                MAX_FEE_MULTIPLIER[EXPRESS]) /
-              10n,
-            confidence: EXPRESS,
-            maxPriorityFeePerGas:
-              estimatedFeesPerGas.estimatedPrices.find(
-                (el) => el.confidence === EXPRESS
-              )?.maxPriorityFeePerGas ?? 0n,
-            price:
-              estimatedFeesPerGas.estimatedPrices.find(
-                (el) => el.confidence === EXPRESS
-              )?.price ?? 0n,
-          },
-          regular: {
-            maxFeePerGas:
-              (estimatedFeesPerGas.baseFeePerGas *
-                MAX_FEE_MULTIPLIER[REGULAR]) /
-              10n,
-            confidence: REGULAR,
-            maxPriorityFeePerGas:
-              estimatedFeesPerGas.estimatedPrices.find(
-                (el) => el.confidence === REGULAR
-              )?.maxPriorityFeePerGas ?? 0n,
-            price:
-              estimatedFeesPerGas.estimatedPrices.find(
-                (el) => el.confidence === REGULAR
-              )?.price ?? 0n,
-          },
+          instant: makeBlockEstimate(INSTANT, estimatedFeesPerGas),
+          express: makeBlockEstimate(EXPRESS, estimatedFeesPerGas),
+          regular: makeBlockEstimate(REGULAR, estimatedFeesPerGas),
         },
-        lastGasEstimatesRefreshed: Date.now(),
       }
+      immerState.lastGasEstimatesRefreshed = Date.now()
+    },
+    setCustomGas: (
+      immerState,
+      {
+        payload: { maxPriorityFeePerGas, maxFeePerGas },
+      }: {
+        payload: {
+          maxPriorityFeePerGas: bigint
+          maxFeePerGas: bigint
+        }
+      }
+    ) => {
+      immerState.customFeesPerGas = {
+        maxPriorityFeePerGas,
+        maxFeePerGas,
+        confidence: 0,
+      }
+    },
+    clearCustomGas: (immerState) => {
+      immerState.customFeesPerGas = defaultCustomGas
     },
   },
   extraReducers: (builder) => {
-    builder.addCase(updateTransactionOptions.pending, (immerState) => {
+    builder.addCase(updateTransactionData.pending, (immerState) => {
       immerState.status = TransactionConstructionStatus.Pending
       immerState.signedTransaction = undefined
     })
@@ -238,20 +323,22 @@ export const {
   signed,
   setFeeType,
   estimatedFeesPerGas,
+  setCustomGas,
+  clearCustomGas,
 } = transactionSlice.actions
 
 export default transactionSlice.reducer
 
 export const broadcastSignedTransaction = createBackgroundAsyncThunk(
   "transaction-construction/broadcast",
-  async (transaction: SignedEVMTransaction) => {
+  async (transaction: SignedTransaction) => {
     await emitter.emit("broadcastSignedTransaction", transaction)
   }
 )
 
 export const transactionSigned = createBackgroundAsyncThunk(
   "transaction-construction/transaction-signed",
-  async (transaction: SignedEVMTransaction, { dispatch, getState }) => {
+  async (transaction: SignedTransaction, { dispatch, getState }) => {
     await dispatch(signed(transaction))
 
     const { transactionConstruction } = getState() as {
@@ -275,78 +362,4 @@ export const rejectTransactionSignature = createBackgroundAsyncThunk(
       )
     )
   }
-)
-
-export const selectDefaultNetworkFeeSettings = createSelector(
-  ({
-    transactionConstruction,
-  }: {
-    transactionConstruction: TransactionConstruction
-  }) => ({
-    feeType: transactionConstruction.feeTypeSelected,
-    selectedFeesPerGas:
-      transactionConstruction.estimatedFeesPerGas?.[
-        transactionConstruction.feeTypeSelected
-      ],
-    suggestedGasLimit: transactionConstruction.transactionRequest?.gasLimit,
-  }),
-  ({ feeType, selectedFeesPerGas, suggestedGasLimit }): NetworkFeeSettings => ({
-    feeType,
-    gasLimit: undefined,
-    suggestedGasLimit,
-    values: {
-      maxFeePerGas: selectedFeesPerGas?.maxFeePerGas ?? 0n,
-      maxPriorityFeePerGas: selectedFeesPerGas?.maxPriorityFeePerGas ?? 0n,
-    },
-  })
-)
-
-export const selectEstimatedFeesPerGas = createSelector(
-  (state: { transactionConstruction: TransactionConstruction }) =>
-    state.transactionConstruction.estimatedFeesPerGas,
-  (gasData) => gasData
-)
-
-export const selectFeeType = createSelector(
-  (state: { transactionConstruction: TransactionConstruction }) =>
-    state.transactionConstruction.feeTypeSelected,
-  (feeTypeChosen) => feeTypeChosen
-)
-
-export const selectLastGasEstimatesRefreshTime = createSelector(
-  (state: { transactionConstruction: TransactionConstruction }) =>
-    state.transactionConstruction.lastGasEstimatesRefreshed,
-  (updateTime) => updateTime
-)
-
-export const selectTransactionData = createSelector(
-  (state: { transactionConstruction: TransactionConstruction }) =>
-    state.transactionConstruction.transactionRequest,
-  (transactionRequestData) => transactionRequestData
-)
-
-export const selectIsTransactionPendingSignature = createSelector(
-  (state: { transactionConstruction: TransactionConstruction }) =>
-    state.transactionConstruction.status,
-  (status) => status === "loaded" || status === "pending"
-)
-
-export const selectIsTransactionLoaded = createSelector(
-  (state: { transactionConstruction: TransactionConstruction }) =>
-    state.transactionConstruction.status,
-  (status) => status === "loaded"
-)
-
-export const selectIsTransactionSigned = createSelector(
-  (state: { transactionConstruction: TransactionConstruction }) =>
-    state.transactionConstruction.status,
-  (status) => status === "signed"
-)
-
-export const selectCurrentlyChosenNetworkFees = createSelector(
-  (state: { transactionConstruction: TransactionConstruction }) =>
-    state.transactionConstruction?.estimatedFeesPerGas?.[
-      state.transactionConstruction.feeTypeSelected
-    ],
-  (feeData) => feeData
 )

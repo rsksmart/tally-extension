@@ -1,5 +1,6 @@
 import React, { ReactElement } from "react"
 import { useDispatch } from "react-redux"
+import { useTranslation } from "react-i18next"
 import { selectCurrentAccount } from "@tallyho/tally-background/redux-slices/selectors"
 import { setSnackbarMessage } from "@tallyho/tally-background/redux-slices/ui"
 import QRCode from "react-qr-code"
@@ -7,6 +8,7 @@ import { useBackgroundSelector } from "../hooks"
 import SharedButton from "../components/Shared/SharedButton"
 
 export default function Receive(): ReactElement {
+  const { t } = useTranslation()
   const dispatch = useDispatch()
 
   const currentAccount: { address: string } =
@@ -17,11 +19,8 @@ export default function Receive(): ReactElement {
     <section>
       <h1>
         <span className="icon_activity_send_medium" />
-        Receive address
+        {t("wallet.receiveAddress")}
       </h1>
-      <div className="sub_title">
-        Only send Ethereum Mainnet compatible assets to this address.
-      </div>
       <div className="qr_code">
         <QRCode value={currentAccount.address} size={128} />
       </div>
@@ -64,17 +63,6 @@ export default function Receive(): ReactElement {
             text-align: center;
             display: flex;
             align-items: center;
-          }
-          .sub_title {
-            margin-top: 18px;
-            width: 281px;
-            height: 33px;
-            color: var(--green-20);
-            font-size: 14px;
-            font-weight: 400;
-            letter-spacing: 0.42px;
-            line-height: 16px;
-            text-align: center;
           }
           .qr_code {
             width: 176px;

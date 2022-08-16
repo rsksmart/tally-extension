@@ -8,11 +8,12 @@ import networksReducer from "./networks"
 import swapReducer from "./0x-swap"
 import transactionConstructionReducer from "./transaction-construction"
 import uiReducer from "./ui"
-import dappPermissionReducer from "./dapp-permission"
+import dappReducer from "./dapp"
 import claimReducer from "./claim"
 import ledgerReducer from "./ledger"
 import signingReducer from "./signing"
 import earnReducer from "./earn"
+import nftsReducer from "./nfts"
 
 const mainReducer = combineReducers({
   account: accountsReducer,
@@ -23,11 +24,12 @@ const mainReducer = combineReducers({
   swap: swapReducer,
   transactionConstruction: transactionConstructionReducer,
   ui: uiReducer,
-  dappPermission: dappPermissionReducer,
+  dapp: dappReducer,
   claim: claimReducer,
   signing: signingReducer,
   earn: earnReducer,
   ledger: ledgerReducer,
+  nfts: nftsReducer,
 })
 
 export default mainReducer

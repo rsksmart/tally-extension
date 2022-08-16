@@ -44,8 +44,13 @@ export function connectProviderBridge(): void {
     )
   })
 
-  // let's grab the internal config
-  port.postMessage({ request: { method: "tally_getConfig" } })
+  // let's grab the internal config that also has chainId info
+  // we send the config on port initialization, but that needs to
+  // be as fast as possible, so we omit the chainId information
+  // from that payload to save the service call
+  port.postMessage({
+    request: { method: "tally_getConfig", origin: windowOriginAtLoadTime },
+  })
 }
 
 export function injectTallyWindowProvider(): void {

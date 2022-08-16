@@ -1,19 +1,22 @@
+import { USE_UPDATED_SIGNING_UI } from "@tallyho/tally-background/features"
 import {
   getAccountTotal,
-  selectCurrentAccountSigningMethod,
+  selectCurrentAccountSigner,
 } from "@tallyho/tally-background/redux-slices/selectors"
 import {
   rejectDataSignature,
   selectTypedData,
   signTypedData,
 } from "@tallyho/tally-background/redux-slices/signing"
+import { ReadOnlyAccountSigner } from "@tallyho/tally-background/services/signing"
 import React, { ReactElement, useState } from "react"
 import { useHistory } from "react-router-dom"
+import Signing from "../components/Signing"
 import SignTransactionContainer from "../components/SignTransaction/SignTransactionContainer"
 import {
   useBackgroundDispatch,
   useBackgroundSelector,
-  useIsSigningMethodLocked,
+  useIsSignerLocked,
 } from "../hooks"
 import SignDataDetailPanel from "./SignDataDetailPanel"
 
@@ -34,17 +37,39 @@ export default function SignData(): ReactElement {
     return undefined
   })
 
-  const signingMethod = useBackgroundSelector(selectCurrentAccountSigningMethod)
+  const currentAccountSigner = useBackgroundSelector(selectCurrentAccountSigner)
 
   const [isTransactionSigning, setIsTransactionSigning] = useState(false)
 
-  const isLocked = useIsSigningMethodLocked(signingMethod)
+  const isLocked = useIsSignerLocked(currentAccountSigner)
+
+  if (USE_UPDATED_SIGNING_UI) {
+    if (currentAccountSigner === null || typedDataRequest === undefined) {
+      return <></>
+    }
+
+    return (
+      <Signing
+        accountSigner={currentAccountSigner}
+        request={typedDataRequest}
+      />
+    )
+  }
+
   if (isLocked) return <></>
 
   const handleConfirm = () => {
     if (typedDataRequest !== undefined) {
-      if (signingMethod) {
-        dispatch(signTypedData({ request: typedDataRequest, signingMethod }))
+      if (
+        currentAccountSigner &&
+        currentAccountSigner !== ReadOnlyAccountSigner
+      ) {
+        dispatch(
+          signTypedData({
+            request: typedDataRequest,
+            accountSigner: currentAccountSigner,
+          })
+        )
         setIsTransactionSigning(true)
       }
     }

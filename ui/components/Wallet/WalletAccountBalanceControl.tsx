@@ -1,44 +1,17 @@
 import React, { ReactElement, useCallback, useState } from "react"
+import { useTranslation } from "react-i18next"
 import classNames from "classnames"
 import { useDispatch } from "react-redux"
 import { refreshBackgroundPage } from "@tallyho/tally-background/redux-slices/ui"
-import { selectCurrentAccountSigningMethod } from "@tallyho/tally-background/redux-slices/selectors"
+import { selectCurrentAccountSigner } from "@tallyho/tally-background/redux-slices/selectors"
+import { ReadOnlyAccountSigner } from "@tallyho/tally-background/services/signing"
+import { USE_BALANCE_RELOADER } from "@tallyho/tally-background/features"
 import { useBackgroundSelector, useLocalStorage } from "../../hooks"
 import SharedButton from "../Shared/SharedButton"
 import SharedSkeletonLoader from "../Shared/SharedSkeletonLoader"
 import SharedSlideUpMenu from "../Shared/SharedSlideUpMenu"
 import Receive from "../../pages/Receive"
-import t from "../../utils/i18n"
-
-function ReadOnlyNotice(): ReactElement {
-  return (
-    <div className="notice_wrap">
-      <div className="icon_eye" />
-      {t("readOnlyNotice")}
-      <style jsx>{`
-        .notice_wrap {
-          width: 177px;
-          height: 40px;
-          background: rgba(238, 178, 24, 0.1);
-          border-radius: 2px;
-          margin: 6px 0 10px;
-          font-weight: 500;
-          font-size: 16px;
-          display: flex;
-          align-items: center;
-          border-left: solid 2px var(--attention);
-        }
-        .icon_eye {
-          background: url("./images/eye@2x.png");
-          background-size: cover;
-          width: 24px;
-          height: 24px;
-          margin: 0px 7px 0px 10px;
-        }
-      `}</style>
-    </div>
-  )
-}
+import ReadOnlyNotice from "../Shared/ReadOnlyNotice"
 
 function BalanceReloader(): ReactElement {
   const dispatch = useDispatch()
@@ -117,15 +90,14 @@ interface Props {
 export default function WalletAccountBalanceControl(
   props: Props
 ): ReactElement {
+  const { t } = useTranslation()
   const { balance, initializationLoadingTimeExpired } = props
   const [openReceiveMenu, setOpenReceiveMenu] = useState(false)
 
   // TODO When non-imported accounts are supported, generalize this.
   const hasSavedSeed = true
 
-  const currentAccountSigningMethod = useBackgroundSelector(
-    selectCurrentAccountSigningMethod
-  )
+  const currentAccountSigner = useBackgroundSelector(selectCurrentAccountSigner)
 
   const handleClick = useCallback(() => {
     setOpenReceiveMenu((currentlyOpen) => !currentlyOpen)
@@ -147,22 +119,24 @@ export default function WalletAccountBalanceControl(
           customStyles="margin: 12px 0"
           isLoaded={!shouldIndicateLoading}
         >
-          <div className="balance_label">{t("totalAccountBalance")}</div>
+          <div className="balance_label">{t("wallet.totalAccountBalance")}</div>
           <span className="balance_area">
             <span className="balance">
               <span className="dollar_sign">$</span>
               {balance ?? 0}
-              <BalanceReloader />
+              {USE_BALANCE_RELOADER && <BalanceReloader />}
             </span>
           </span>
         </SharedSkeletonLoader>
 
         <SharedSkeletonLoader
           isLoaded={!shouldIndicateLoading}
+          height={24}
           width={180}
           customStyles="margin-bottom: 10px;"
         >
-          {currentAccountSigningMethod ? (
+          <ReadOnlyNotice />
+          {currentAccountSigner !== ReadOnlyAccountSigner && (
             <>
               {hasSavedSeed ? (
                 <div className="send_receive_button_wrap">
@@ -173,7 +147,7 @@ export default function WalletAccountBalanceControl(
                     linkTo="/send"
                     iconPosition="left"
                   >
-                    Send
+                    {t("wallet.send")}
                   </SharedButton>
                   <SharedButton
                     onClick={handleClick}
@@ -182,7 +156,7 @@ export default function WalletAccountBalanceControl(
                     type="tertiary"
                     iconPosition="left"
                   >
-                    Receive
+                    {t("wallet.receive")}
                   </SharedButton>
                 </div>
               ) : (
@@ -193,13 +167,11 @@ export default function WalletAccountBalanceControl(
                     type="warning"
                     linkTo="/onboarding/2"
                   >
-                    First, secure your recovery seed
+                    {t("wallet.secureSeed")}
                   </SharedButton>
                 </div>
               )}
             </>
-          ) : (
-            <ReadOnlyNotice />
           )}
         </SharedSkeletonLoader>
       </div>

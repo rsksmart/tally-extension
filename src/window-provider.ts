@@ -25,10 +25,12 @@ if (!window.walletRouter) {
   Object.defineProperty(window, "walletRouter", {
     value: {
       currentProvider: window.tally,
-      previousProvider: window.ethereum,
+      lastInjectedProvider: window.ethereum,
+      tallyProvider: window.tally,
       providers: [
         // deduplicate the providers array: https://medium.com/@jakubsynowiec/unique-array-values-in-javascript-7c932682766c
         ...new Set([
+          window.tally,
           // eslint-disable-next-line no-nested-ternary
           ...(window.ethereum
             ? // let's use the providers that has already been registered
@@ -40,11 +42,27 @@ if (!window.walletRouter) {
           window.tally,
         ]),
       ],
-      switchToPreviousProvider() {
-        if (this.previousProvider) {
-          const tempPreviousProvider = this.previousProvider
-          this.previousProvider = this.currentProvider
-          this.currentProvider = tempPreviousProvider
+      shouldSetTallyForCurrentProvider(
+        shouldSetTally: boolean,
+        shouldReload = false
+      ) {
+        if (shouldSetTally && this.currentProvider !== this.tallyProvider) {
+          this.currentProvider = this.tallyProvider
+        } else if (
+          !shouldSetTally &&
+          this.currentProvider === this.tallyProvider
+        ) {
+          this.currentProvider = this.lastInjectedProvider ?? this.tallyProvider
+        }
+
+        if (
+          shouldReload &&
+          (window.location.href.includes("app.uniswap.org") ||
+            window.location.href.includes("galaxy.eco"))
+        ) {
+          setTimeout(() => {
+            window.location.reload()
+          }, 1000)
         }
       },
       getProviderInfo(provider: WalletProvider) {
@@ -56,28 +74,12 @@ if (!window.walletRouter) {
           }
         )
       },
-      hasProvider(checkIdentity: (provider: WalletProvider) => boolean) {
-        return this.providers.some(checkIdentity)
-      },
-      getProvider(checkIdentity: (provider: WalletProvider) => boolean) {
-        const providerIndex = this.providers.findIndex(checkIdentity)
-        return this.providers[providerIndex]
-      },
-      setCurrentProvider(checkIdentity: (provider: WalletProvider) => boolean) {
-        if (!this.hasProvider(checkIdentity)) {
-          throw new Error(
-            "The given identity did not match to any of the recognized providers!"
-          )
-        }
-        this.previousProvider = this.currentProvider
-        this.currentProvider = this.getProvider(checkIdentity)
-      },
       addProvider(newProvider: WalletProvider) {
         if (!this.providers.includes(newProvider)) {
           this.providers.push(newProvider)
         }
 
-        this.previousProvider = newProvider
+        this.lastInjectedProvider = newProvider
       },
     },
     writable: false,
@@ -85,15 +87,48 @@ if (!window.walletRouter) {
   })
 }
 
+// Some popular dapps depend on the entire window.ethereum equality between component renders
+// to detect provider changes.  We need to cache the walletRouter proxy we return here or
+// these dapps may incorrectly detect changes in the provider where there are none.
+let cachedWindowEthereumProxy: WindowEthereum
+
+// We need to save the current provider at the time we cache the proxy object,
+// so we can recognize when the default wallet behavior is changed. When the
+// default wallet is changed we are switching the underlying provider.
+let cachedCurrentProvider: WalletProvider
+
 Object.defineProperty(window, "ethereum", {
   get() {
-    return new Proxy(window.walletRouter!.currentProvider, {
+    if (!window.walletRouter) {
+      throw new Error(
+        "window.walletRouter is expected to be set to change the injected provider on window.ethereum."
+      )
+    }
+    if (
+      cachedWindowEthereumProxy &&
+      cachedCurrentProvider === window.walletRouter.currentProvider
+    ) {
+      return cachedWindowEthereumProxy
+    }
+
+    cachedWindowEthereumProxy = new Proxy(window.walletRouter.currentProvider, {
       get(target, prop, receiver) {
         if (
           window.walletRouter &&
-          !(prop in window.walletRouter!.currentProvider) &&
-          prop in window.walletRouter!
+          !(prop in window.walletRouter.currentProvider) &&
+          prop in window.walletRouter
         ) {
+          // Uniswap MM connector checks the providers array for the MM provider and forces to use that
+          // https://github.com/Uniswap/web3-react/blob/main/packages/metamask/src/index.ts#L57
+          // as a workaround we need to remove this list for uniswap so the actual provider change can work after reload.
+          // The same is true for `galaxy.eco`
+          if (
+            window.location.href.includes("app.uniswap.org") &&
+            window.location.href.includes("galaxy.eco") &&
+            prop === "providers"
+          ) {
+            return null
+          }
           // let's publish the api of `window.walletRoute` also on `window.ethereum` for better discoverability
 
           // @ts-expect-error ts accepts symbols as index only from 4.4
@@ -104,6 +139,9 @@ Object.defineProperty(window, "ethereum", {
         return Reflect.get(target, prop, receiver)
       },
     })
+    cachedCurrentProvider = window.walletRouter.currentProvider
+
+    return cachedWindowEthereumProxy
   },
   set(newProvider) {
     window.walletRouter?.addProvider(newProvider)

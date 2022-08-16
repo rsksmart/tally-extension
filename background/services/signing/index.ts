@@ -1,19 +1,17 @@
 import { StatusCodes, TransportStatusError } from "@ledgerhq/errors"
-import KeyringService from "../keyring"
-import LedgerService from "../ledger"
+import KeyringService, { KeyringAccountSigner } from "../keyring"
+import LedgerService, { LedgerAccountSigner } from "../ledger"
 import {
-  EIP1559TransactionRequest,
-  EVMNetwork,
-  SignedEVMTransaction,
+  SignedTransaction,
+  TransactionRequest,
+  TransactionRequestWithNonce,
 } from "../../networks"
-import { EVM_NETWORKS_BY_CHAIN_ID } from "../../constants/networks"
 import { EIP712TypedData, HexString } from "../../types"
 import BaseService from "../base"
 import { ServiceCreatorFunction, ServiceLifecycleEvents } from "../types"
 import ChainService from "../chain"
-import { USE_MAINNET_FORK } from "../../features"
-import { FORK } from "../../constants"
-import { SigningMethod } from "../../utils/signing"
+import { AddressOnNetwork } from "../../accounts"
+import { assertUnreachable } from "../../lib/utils/type-guards"
 
 type SigningErrorReason = "userRejected" | "genericError"
 type ErrorResponse = {
@@ -24,7 +22,7 @@ type ErrorResponse = {
 export type TXSignatureResponse =
   | {
       type: "success-tx"
-      signedTx: SignedEVMTransaction
+      signedTx: SignedTransaction
     }
   | ErrorResponse
 
@@ -41,17 +39,29 @@ type Events = ServiceLifecycleEvents & {
   personalSigningResponse: SignatureResponse
 }
 
-type SignerType = "keyring" | HardwareSignerType
-type HardwareSignerType = "ledger"
+/**
+ * An AccountSigner that represents a read-only account. Read-only accounts
+ * generally cannot sign.
+ */
+export const ReadOnlyAccountSigner = { type: "read-only" } as const
+
+/**
+ * An AccountSigner carries the appropriate information for a given signer to
+ * act on a signing request. The `type` field always carries the signer type,
+ * but the rest of the object is signer-specific and should be treated as
+ * opaque outside of the specific signer's service.
+ */
+export type AccountSigner =
+  | typeof ReadOnlyAccountSigner
+  | KeyringAccountSigner
+  | HardwareAccountSigner
+export type HardwareAccountSigner = LedgerAccountSigner
+
+export type SignerType = AccountSigner["type"]
 
 type AddressHandler = {
   address: string
   signer: SignerType
-}
-
-type AccountSigner = {
-  type: SignerType
-  accountID: string
 }
 
 function getSigningErrorReason(err: unknown): SigningErrorReason {
@@ -104,26 +114,25 @@ export default class SigningService extends BaseService<Events> {
 
   async deriveAddress(signerID: AccountSigner): Promise<HexString> {
     if (signerID.type === "ledger") {
-      return this.ledgerService.deriveAddress(signerID.accountID)
+      return this.ledgerService.deriveAddress(signerID)
     }
 
     if (signerID.type === "keyring") {
-      return this.keyringService.deriveAddress(signerID.accountID)
+      return this.keyringService.deriveAddress(signerID)
     }
 
     throw new Error(`Unknown signerID: ${signerID}`)
   }
 
   private async signTransactionWithNonce(
-    transactionWithNonce: EIP1559TransactionRequest & { nonce: number },
-    signingMethod: SigningMethod
-  ): Promise<SignedEVMTransaction> {
-    switch (signingMethod.type) {
+    transactionWithNonce: TransactionRequestWithNonce,
+    accountSigner: AccountSigner
+  ): Promise<SignedTransaction> {
+    switch (accountSigner.type) {
       case "ledger":
         return this.ledgerService.signTransaction(
           transactionWithNonce,
-          signingMethod.deviceID,
-          signingMethod.path
+          accountSigner
         )
       case "keyring":
         return this.keyringService.signTransaction(
@@ -133,38 +142,45 @@ export default class SigningService extends BaseService<Events> {
           },
           transactionWithNonce
         )
+      case "read-only":
+        throw new Error("Read-only signers cannot sign.")
       default:
-        throw new Error(`Unreachable!`)
+        return assertUnreachable(accountSigner)
     }
   }
 
   async removeAccount(
     address: HexString,
-    signingMethod: SigningMethod
+    signerType?: SignerType
   ): Promise<void> {
-    switch (signingMethod.type) {
-      case "keyring":
-        await this.keyringService.hideAccount(address)
-        break
-      case "ledger":
-        // @TODO Implement removal of ledger accounts.
-        break
-      default:
-        throw new Error("Unknown signingMethod type.")
+    if (signerType) {
+      switch (signerType) {
+        case "keyring":
+          await this.keyringService.hideAccount(address)
+          break
+        case "ledger":
+          await this.ledgerService.removeAddress(address)
+          break
+        case "read-only":
+          break // no additional work here, just account removal below
+        default:
+          assertUnreachable(signerType)
+      }
     }
+    await this.chainService.removeAccountToTrack(address)
   }
 
   async signTransaction(
-    transactionRequest: EIP1559TransactionRequest,
-    signingMethod: SigningMethod
-  ): Promise<SignedEVMTransaction> {
+    transactionRequest: TransactionRequest,
+    accountSigner: AccountSigner
+  ): Promise<SignedTransaction> {
     const transactionWithNonce =
       await this.chainService.populateEVMTransactionNonce(transactionRequest)
 
     try {
       const signedTx = await this.signTransactionWithNonce(
         transactionWithNonce,
-        signingMethod
+        accountSigner
       )
 
       this.emitter.emit("signingTxResponse", {
@@ -192,31 +208,49 @@ export default class SigningService extends BaseService<Events> {
   async signTypedData({
     typedData,
     account,
-    signingMethod,
+    accountSigner,
   }: {
     typedData: EIP712TypedData
-    account: HexString
-    signingMethod: SigningMethod
+    account: AddressOnNetwork
+    accountSigner: AccountSigner
   }): Promise<string> {
     try {
       let signedData: string
-      switch (signingMethod.type) {
+      const chainId =
+        typeof typedData.domain.chainId === "string"
+          ? // eslint-disable-next-line radix
+            parseInt(typedData.domain.chainId)
+          : typedData.domain.chainId
+      if (
+        typedData.domain.chainId !== undefined &&
+        // Let parseInt infer radix by prefix; chainID can be hex or decimal,
+        // though it should generally be hex.
+        // eslint-disable-next-line radix
+        chainId !== parseInt(account.network.chainID)
+      ) {
+        throw new Error(
+          "Attempting to sign typed data with mismatched chain IDs."
+        )
+      }
+
+      switch (accountSigner.type) {
         case "ledger":
           signedData = await this.ledgerService.signTypedData(
             typedData,
-            account,
-            signingMethod.deviceID,
-            signingMethod.path
+            account.address,
+            accountSigner
           )
           break
         case "keyring":
           signedData = await this.keyringService.signTypedData({
             typedData,
-            account,
+            account: account.address,
           })
           break
+        case "read-only":
+          throw new Error("Read-only signers cannot sign.")
         default:
-          throw new Error(`Unreachable!`)
+          assertUnreachable(accountSigner)
       }
       this.emitter.emit("signingDataResponse", {
         type: "success-data",
@@ -235,25 +269,30 @@ export default class SigningService extends BaseService<Events> {
   }
 
   async signData(
-    address: string,
+    addressOnNetwork: AddressOnNetwork,
     message: string,
-    signingMethod: SigningMethod
+    accountSigner: AccountSigner
   ): Promise<string> {
     this.signData = this.signData.bind(this)
     try {
       let signedData
-      switch (signingMethod.type) {
+      switch (accountSigner.type) {
         case "ledger":
-          signedData = await this.ledgerService.signMessage(address, message)
+          signedData = await this.ledgerService.signMessage(
+            addressOnNetwork,
+            message
+          )
           break
         case "keyring":
           signedData = await this.keyringService.personalSign({
             signingData: message,
-            account: address,
+            account: addressOnNetwork.address,
           })
           break
+        case "read-only":
+          throw new Error("Read-only signers cannot sign.")
         default:
-          throw new Error(`Unreachable!`)
+          assertUnreachable(accountSigner)
       }
 
       this.emitter.emit("personalSigningResponse", {

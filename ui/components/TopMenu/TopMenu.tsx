@@ -1,19 +1,13 @@
 import React, { ReactElement, useState, useEffect, useCallback } from "react"
 import { browser } from "@tallyho/tally-background"
 import { PermissionRequest } from "@tallyho/provider-bridge-shared"
-import {
-  selectAllowedPages,
-  selectCurrentAccount,
-} from "@tallyho/tally-background/redux-slices/selectors"
-import {
-  HIDE_TOKEN_FEATURES,
-  MULTI_NETWORK,
-} from "@tallyho/tally-background/features"
-import { denyOrRevokePermission } from "@tallyho/tally-background/redux-slices/dapp-permission"
+import { selectAllowedPages } from "@tallyho/tally-background/redux-slices/selectors"
+import { HIDE_TOKEN_FEATURES } from "@tallyho/tally-background/features"
+import { denyOrRevokePermission } from "@tallyho/tally-background/redux-slices/dapp"
 import TopMenuProtocolSwitcher from "./TopMenuProtocolSwitcher"
 import TopMenuProfileButton from "./TopMenuProfileButton"
 
-import BonusProgramModalContent from "../BonusProgram/BonusProgramModalContent"
+import BonusProgramModal from "../BonusProgram/BonusProgramModal"
 import AccountsNotificationPanel from "../AccountsNotificationPanel/AccountsNotificationPanel"
 import SharedSlideUpMenu from "../Shared/SharedSlideUpMenu"
 import TopMenuConnectedDAppInfo from "./TopMenuConnectedDAppInfo"
@@ -35,9 +29,9 @@ export default function TopMenu(): ReactElement {
     {} as PermissionRequest
   )
   const [isConnectedToDApp, setIsConnectedToDApp] = useState(false)
-
-  const allowedPages = useBackgroundSelector(selectAllowedPages)
-  const currentAccount = useBackgroundSelector(selectCurrentAccount)
+  const allowedPages = useBackgroundSelector((state) =>
+    selectAllowedPages(state)
+  )
 
   const initPermissionAndOrigin = useCallback(async () => {
     const { url } = await browser.tabs
@@ -48,12 +42,13 @@ export default function TopMenu(): ReactElement {
       .then((tabs) =>
         tabs[0] ? tabs[0] : { url: "", favIconUrl: "", title: "" }
       )
-
     if (!url) return
 
     const { origin } = new URL(url)
 
-    const allowPermission = allowedPages[`${origin}_${currentAccount.address}`]
+    const allowPermission = allowedPages.find(
+      (permission) => permission.origin === origin
+    )
 
     if (allowPermission) {
       setCurrentPermission(allowPermission)
@@ -61,7 +56,7 @@ export default function TopMenu(): ReactElement {
     } else {
       setIsConnectedToDApp(false)
     }
-  }, [allowedPages, setCurrentPermission, currentAccount])
+  }, [allowedPages, setCurrentPermission])
 
   useEffect(() => {
     initPermissionAndOrigin()
@@ -69,12 +64,21 @@ export default function TopMenu(): ReactElement {
 
   const deny = useCallback(async () => {
     if (typeof currentPermission !== "undefined") {
-      await dispatch(
-        denyOrRevokePermission({ ...currentPermission, state: "deny" })
+      // Deletes all permissions corresponding to the currently selected
+      // account and origin
+      await Promise.all(
+        allowedPages.map(async (permission) => {
+          if (permission.origin === currentPermission.origin) {
+            return dispatch(
+              denyOrRevokePermission({ ...permission, state: "deny" })
+            )
+          }
+          return undefined
+        })
       )
     }
     window.close()
-  }, [dispatch, currentPermission])
+  }, [dispatch, currentPermission, allowedPages])
 
   return (
     <>
@@ -89,23 +93,23 @@ export default function TopMenu(): ReactElement {
           disconnect={deny}
         />
       ) : null}
-      <SharedSlideUpMenu
+      <BonusProgramModal
         isOpen={isBonusProgramOpen}
-        close={() => {
+        onClose={() => {
           setIsBonusProgramOpen(false)
         }}
-        size="custom"
-        customSize="497px"
-      >
-        <BonusProgramModalContent />
-      </SharedSlideUpMenu>
+      />
       <SharedSlideUpMenu
         isOpen={isProtocolListOpen}
         close={() => {
           setIsProtocolListOpen(false)
         }}
       >
-        <TopMenuProtocolList />
+        <TopMenuProtocolList
+          onProtocolChange={() => {
+            setIsProtocolListOpen(false)
+          }}
+        />
       </SharedSlideUpMenu>
       <SharedSlideUpMenu
         isOpen={isNotificationsOpen}
@@ -120,7 +124,6 @@ export default function TopMenu(): ReactElement {
       <div className="nav_wrap">
         <nav className="standard_width_padded">
           <TopMenuProtocolSwitcher
-            enabled={MULTI_NETWORK}
             onClick={() => setIsProtocolListOpen(true)}
           />
           <div className="profile_group">

@@ -1,5 +1,17 @@
 /// <reference types="styled-jsx" />
 
+declare module "webext-redux/lib/strategies/deepDiff/diff" {
+  // This should be : DiffStrategy, but importing webext-redux to reuse
+  // DiffStrategy results in an error augmenting the diff module.
+  export default function (): (oldObj: unknown, newObj: unknown) => unknown
+}
+
+declare module "webext-redux/lib/strategies/deepDiff/patch" {
+  // This should be : DiffStrategy, but importing webext-redux to reuse
+  // DiffStrategy results in an error augmenting the patch module.
+  export default function (): (oldObj: unknown, newObj: unknown) => unknown
+}
+
 // Although you would expect this file to be unnecessary, removing it will
 // result in a handful of type errors. See PR #196.
 
@@ -37,16 +49,13 @@ interface Window {
   walletRouter?: {
     currentProvider: WalletProvider
     providers: WalletProvider[]
-    switchToPreviousProvider: () => void
+    shouldSetTallyForCurrentProvider: (
+      shouldSetTally: boolean,
+      shouldReload?: boolean
+    ) => void
     getProviderInfo: (
       provider: WalletProvider
     ) => WalletProvider["providerInfo"]
-    hasProvider: (
-      checkIdentity: (provider: WalletProvider) => boolean
-    ) => boolean
-    setCurrentProvider: (
-      checkIdentity: (provider: WalletProvider) => boolean
-    ) => void
     addProvider: (newProvider: WalletProvider) => void
   }
   tally?: TallyProvider

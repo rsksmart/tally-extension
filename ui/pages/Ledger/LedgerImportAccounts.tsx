@@ -7,11 +7,14 @@ import {
 } from "@tallyho/tally-background/redux-slices/ledger"
 import classNames from "classnames"
 import React, { ReactElement, useEffect, useState } from "react"
-import { useBackgroundDispatch } from "../../hooks"
+import { selectCurrentNetwork } from "@tallyho/tally-background/redux-slices/selectors"
+import { EVMNetwork } from "@tallyho/tally-background/networks"
+import { useBackgroundDispatch, useBackgroundSelector } from "../../hooks"
 import SharedButton from "../../components/Shared/SharedButton"
 import LedgerContinueButton from "../../components/Ledger/LedgerContinueButton"
 import LedgerPanelContainer from "../../components/Ledger/LedgerPanelContainer"
 import OnboardingDerivationPathSelectAlt from "../../components/Onboarding/OnboardingDerivationPathSelect"
+import { scanWebsite } from "../../utils/constants"
 
 const addressesPerPage = 6
 
@@ -19,10 +22,12 @@ function usePageData({
   device,
   pageIndex,
   parentPath,
+  network,
 }: {
   device: LedgerDeviceState
   parentPath: string
   pageIndex: number
+  network: EVMNetwork
 }) {
   const dispatch = useBackgroundDispatch()
 
@@ -50,7 +55,7 @@ function usePageData({
       path,
       account,
       address,
-      ethBalance: account?.balance ?? null,
+      balance: account?.balance[network.chainID] ?? null,
       isSelected: (selectedStates[path] ?? false) && address !== null,
       setSelected: (selected: boolean) => {
         setSelectedStates((states) => ({ ...states, [path]: selected }))
@@ -76,14 +81,21 @@ function usePageData({
   }, [device.id, dispatch, items])
 
   useEffect(() => {
-    const nextUnresolvedBalance = items.find((item) => item.ethBalance === null)
+    const nextUnresolvedBalance = items.find((item) => item.balance === null)
     if (!nextUnresolvedBalance) return
     const { path, account } = nextUnresolvedBalance
     if (!account) return
-    const { address, fetchingBalance } = account
-    if (!address || fetchingBalance) return
-    dispatch(fetchBalance({ deviceID: device.id, path, address }))
-  }, [device.id, dispatch, items])
+    const { address } = account
+    if (!address) return
+    dispatch(
+      fetchBalance({
+        deviceID: device.id,
+        path,
+        address,
+        network,
+      })
+    )
+  }, [device.id, dispatch, items, network])
 
   const selectedAccounts = items.flatMap((item) => {
     if (!selectedStates[item.path]) return []
@@ -106,8 +118,14 @@ function LedgerAccountList({
   onConnect: () => void
 }): ReactElement {
   const [pageIndex, setPageIndex] = useState(0)
+  const selectedNetwork = useBackgroundSelector(selectCurrentNetwork)
 
-  const pageData = usePageData({ device, parentPath, pageIndex })
+  const pageData = usePageData({
+    device,
+    parentPath,
+    pageIndex,
+    network: selectedNetwork,
+  })
   const dispatch = useBackgroundDispatch()
 
   return (
@@ -115,7 +133,7 @@ function LedgerAccountList({
       <div className="addresses">
         <div className="item-list">
           {pageData.items.map(
-            ({ path, address, ethBalance, isSelected, setSelected }) => (
+            ({ path, address, balance, isSelected, setSelected }) => (
               <div className="item" key={path}>
                 <label className="checkbox_label">
                   {/* TODO: Share this implementation of checkbox. */}
@@ -142,9 +160,11 @@ function LedgerAccountList({
                       {address.slice(0, 4)}...
                       {address.slice(address.length - 4)}
                     </div>
-                    {ethBalance === null && <div className="balance_loading" />}
-                    {ethBalance !== null && (
-                      <div className="balance">{ethBalance} ETH</div>
+                    {balance === null && <div className="balance_loading" />}
+                    {balance !== null && (
+                      <div className="balance">
+                        {balance} {selectedNetwork.baseAsset.symbol}
+                      </div>
                     )}
                     <div className="etherscan_link_container">
                       <SharedButton
@@ -154,7 +174,9 @@ function LedgerAccountList({
                         onClick={() => {
                           window
                             .open(
-                              `https://etherscan.io/address/${address}`,
+                              `${
+                                scanWebsite[selectedNetwork.chainID].url
+                              }/address/${address}`,
                               "_blank"
                             )
                             ?.focus()

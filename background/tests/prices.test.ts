@@ -178,14 +178,10 @@ describe("lib/prices.ts", () => {
       const fetchJsonResponse = {
         ethereum: {
           usd: 3836.53,
-          eur: 3297.36,
-          cny: 24487,
           last_updated_at: 1634672101,
         },
         bitcoin: {
           usd: 63909,
-          eur: 54928,
-          cny: 407908,
           last_updated_at: 1634672139,
         },
       }
@@ -195,50 +191,7 @@ describe("lib/prices.ts", () => {
           amounts: [639090000000000n, 100000000n],
           pair: [
             { decimals: 10, name: "United States Dollar", symbol: "USD" },
-            {
-              decimals: 8,
-              metadata: {
-                coinGeckoID: "bitcoin",
-                tokenLists: [],
-                websiteURL: "https://bitcoin.org",
-              },
-              name: "Bitcoin",
-              symbol: "BTC",
-            },
-          ],
-          time: dateNow,
-        },
-        {
-          amounts: [549280000000000n, 100000000n],
-          pair: [
-            { decimals: 10, name: "euro", symbol: "EUR" },
-            {
-              decimals: 8,
-              metadata: {
-                coinGeckoID: "bitcoin",
-                tokenLists: [],
-                websiteURL: "https://bitcoin.org",
-              },
-              name: "Bitcoin",
-              symbol: "BTC",
-            },
-          ],
-          time: dateNow,
-        },
-        {
-          amounts: [4079080000000000n, 100000000n],
-          pair: [
-            { decimals: 10, name: "renminbi", symbol: "CNY" },
-            {
-              decimals: 8,
-              metadata: {
-                coinGeckoID: "bitcoin",
-                tokenLists: [],
-                websiteURL: "https://bitcoin.org",
-              },
-              name: "Bitcoin",
-              symbol: "BTC",
-            },
+            BTC,
           ],
           time: dateNow,
         },
@@ -246,50 +199,7 @@ describe("lib/prices.ts", () => {
           amounts: [38365300000000n, 1000000000000000000n],
           pair: [
             { decimals: 10, name: "United States Dollar", symbol: "USD" },
-            {
-              decimals: 18,
-              metadata: {
-                coinGeckoID: "ethereum",
-                tokenLists: [],
-                websiteURL: "https://ethereum.org",
-              },
-              name: "Ether",
-              symbol: "ETH",
-            },
-          ],
-          time: dateNow,
-        },
-        {
-          amounts: [32973600000000n, 1000000000000000000n],
-          pair: [
-            { decimals: 10, name: "euro", symbol: "EUR" },
-            {
-              decimals: 18,
-              metadata: {
-                coinGeckoID: "ethereum",
-                tokenLists: [],
-                websiteURL: "https://ethereum.org",
-              },
-              name: "Ether",
-              symbol: "ETH",
-            },
-          ],
-          time: dateNow,
-        },
-        {
-          amounts: [244870000000000n, 1000000000000000000n],
-          pair: [
-            { decimals: 10, name: "renminbi", symbol: "CNY" },
-            {
-              decimals: 18,
-              metadata: {
-                coinGeckoID: "ethereum",
-                tokenLists: [],
-                websiteURL: "https://ethereum.org",
-              },
-              name: "Ether",
-              symbol: "ETH",
-            },
+            ETH,
           ],
           time: dateNow,
         },
@@ -332,16 +242,7 @@ describe("lib/prices.ts", () => {
           amounts: [38365300000000n, 1000000000000000000n],
           pair: [
             { decimals: 10, name: "United States Dollar", symbol: "USD" },
-            {
-              decimals: 18,
-              metadata: {
-                coinGeckoID: "ethereum",
-                tokenLists: [],
-                websiteURL: "https://ethereum.org",
-              },
-              name: "Ether",
-              symbol: "ETH",
-            },
+            ETH,
           ],
           time: dateNow,
         },

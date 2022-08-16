@@ -1,6 +1,11 @@
 import { Network } from "@ethersproject/networks"
 import { AnyAssetAmount, SmartContractFungibleAsset } from "../../assets"
-import { AnyEVMTransaction, EIP1559TransactionRequest } from "../../networks"
+import {
+  AnyEVMTransaction,
+  EIP1559TransactionRequest,
+  EVMNetwork,
+  LegacyEVMTransactionRequest,
+} from "../../networks"
 import { AssetDecimalAmount } from "../../redux-slices/utils/asset-utils"
 import { HexString, UNIXTime } from "../../types"
 import { SignTypedDataRequest } from "../../utils/signing"
@@ -26,7 +31,17 @@ export type BaseTransactionAnnotation = {
    * The timestamp of the transaction's associated block if available.
    */
   blockTimestamp: UNIXTime | undefined
+  /*
+   *
+   */
+  warnings?: Warning[]
 }
+
+export type Warning =
+  | "send-to-token"
+  | "send-to-contract"
+  | "approve-eoa"
+  | "insufficient-funds"
 
 export type ContractDeployment = BaseTransactionAnnotation & {
   type: "contract-deployment"
@@ -77,13 +92,44 @@ export type EnrichedEVMTransaction = AnyEVMTransaction & {
 }
 
 export type EnrichedEVMTransactionSignatureRequest =
-  (Partial<EIP1559TransactionRequest> & { from: string }) & {
+  | EnrichedEIP1559TransactionSignatureRequest
+  | EnrichedLegacyTransactionSignatureRequest
+
+export type EnrichedEIP1559TransactionSignatureRequest =
+  Partial<EIP1559TransactionRequest> & {
+    from: string
     annotation?: TransactionAnnotation
+    network: EVMNetwork
+  }
+
+export type EnrichedLegacyTransactionSignatureRequest =
+  Partial<LegacyEVMTransactionRequest> & {
+    from: string
+    annotation?: TransactionAnnotation
+    network: EVMNetwork
   }
 
 export type EnrichedEIP1559TransactionRequest = EIP1559TransactionRequest & {
   annotation?: TransactionAnnotation
 }
+
+export type EnrichedLegacyTransactionRequest = LegacyEVMTransactionRequest & {
+  annotation?: TransactionAnnotation
+}
+
+export type EnrichedEVMTransactionRequest =
+  | EnrichedEIP1559TransactionRequest
+  | EnrichedLegacyTransactionRequest
+
+type PartialEIP1559TransactionRequestWithFrom =
+  | Partial<EIP1559TransactionRequest> & { from: string }
+
+type PartialLegacyEVMTransactionRequestWithFrom =
+  | Partial<LegacyEVMTransactionRequest> & { from: string }
+
+export type PartialTransactionRequestWithFrom =
+  | PartialEIP1559TransactionRequestWithFrom
+  | PartialLegacyEVMTransactionRequestWithFrom
 
 export type TypedDataField = {
   value: string

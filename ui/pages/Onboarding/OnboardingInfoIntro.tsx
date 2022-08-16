@@ -1,5 +1,6 @@
 import React, { ReactElement, useState } from "react"
 import { Redirect } from "react-router-dom"
+import { getAddressCount } from "@tallyho/tally-background/redux-slices/selectors"
 import { HIDE_TOKEN_FEATURES } from "@tallyho/tally-background/features"
 import { useBackgroundSelector } from "../../hooks"
 import SharedButton from "../../components/Shared/SharedButton"
@@ -27,17 +28,6 @@ const steps = HIDE_TOKEN_FEATURES
         },
         title: "Tally Ho! is a DAO",
         body: `That means Tally Ho is owned by our users. And all profits go straight to the community.`,
-        buttonCopy: "Continue",
-      },
-      {
-        image: {
-          width: 244.22,
-          height: 247.24,
-          fileName: "illustration_onboarding_community_edition",
-          extraStyles: `margin-top: 21px;`,
-        },
-        title: "Test Responsibly",
-        body: `Tally Ho is a work in progress! This Community Edition includes limited features and may still have bugs.`,
         buttonCopy: "Continue",
       },
       {
@@ -93,7 +83,7 @@ export default function OnboardingInfoIntro(): ReactElement {
   const [redirectToAddWallet, setRedirectToAddWallet] = useState(false)
 
   const hasAccounts = useBackgroundSelector(
-    (state) => Object.keys(state.account.accountsData).length > 0
+    (state) => getAddressCount(state) > 0
   )
 
   if (redirectToAddWallet) {

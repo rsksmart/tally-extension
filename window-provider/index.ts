@@ -16,6 +16,14 @@ import {
 } from "@tallyho/provider-bridge-shared"
 import { EventEmitter } from "events"
 
+// TODO: we don't want to impersonate MetaMask everywhere to not break existing integrations,
+//       so let's do this only on the websites that need this feature
+const impersonateMetamaskWhitelist = [
+  "opensea.io",
+  "bridge.umbria.network",
+  "galaxy.eco",
+]
+
 export default class TallyWindowProvider extends EventEmitter {
   // TODO: This should come from the background with onConnect when any interaction is initiated by the dApp.
   // onboard.js relies on this, or uses a deprecated api. It seemed to be a reasonable workaround for now.
@@ -23,9 +31,13 @@ export default class TallyWindowProvider extends EventEmitter {
 
   selectedAddress: string | undefined
 
-  isConnected = false
+  connected = false
 
   isTally = true
+
+  isMetaMask = false
+
+  isWeb3 = true
 
   bridgeListeners = new Map()
 
@@ -66,26 +78,19 @@ export default class TallyWindowProvider extends EventEmitter {
       }
 
       if (isTallyConfigPayload(result)) {
-        if (!result.defaultWallet) {
-          // if tally is NOT set to be default wallet
-          // AND we have other providers that tried to inject into window.ethereum
-          if (window.walletRouter?.providers.length) {
-            // then let's reset window.ethereum to the original value
-            window.walletRouter.switchToPreviousProvider()
-          }
-
-          // NOTE: we do not remove the TallyWindowProvider from window.ethereum
-          // if there is nothing else that want's to use it.
-        } else if (window.walletRouter?.currentProvider !== window.tally) {
-          if (
-            !window.walletRouter?.hasProvider(this.providerInfo.checkIdentity)
-          ) {
-            window.walletRouter?.addProvider(window.tally!)
-          }
-
-          window.walletRouter?.setCurrentProvider(
-            this.providerInfo.checkIdentity
+        window.walletRouter?.shouldSetTallyForCurrentProvider(
+          result.defaultWallet,
+          result.shouldReload
+        )
+        if (
+          impersonateMetamaskWhitelist.some((host) =>
+            window.location.host.includes(host)
           )
+        ) {
+          this.isMetaMask = result.defaultWallet
+        }
+        if (result.chainId && result.chainId !== this.chainId) {
+          this.handleChainIdChange.bind(this)(result.chainId)
         }
       } else if (isTallyAccountPayload(result)) {
         this.handleAddressChange.bind(this)(result.address)
@@ -98,6 +103,10 @@ export default class TallyWindowProvider extends EventEmitter {
   // deprecated EIP-1193 method
   async enable(): Promise<unknown> {
     return this.request({ method: "eth_requestAccounts" })
+  }
+
+  isConnected(): boolean {
+    return this.connected
   }
 
   // deprecated EIP1193 send for web3-react injected provider Send type:
@@ -121,13 +130,27 @@ export default class TallyWindowProvider extends EventEmitter {
     }
 
     if (isObject(methodOrRequest) && typeof paramsOrCallback === "function") {
-      return this.request(methodOrRequest).then(
-        (response) => paramsOrCallback(null, response),
-        (error) => paramsOrCallback(error, null)
-      )
+      return this.sendAsync(methodOrRequest, paramsOrCallback)
     }
 
     return Promise.reject(new Error("Unsupported function parameters"))
+  }
+
+  // deprecated EIP-1193 method
+  // added as some dapps are still using it
+  sendAsync(
+    request: RequestArgument & { id?: number; jsonrpc?: string },
+    callback: (error: unknown, response: unknown) => void
+  ): Promise<unknown> | void {
+    return this.request(request).then(
+      (response) =>
+        callback(null, {
+          result: response,
+          id: request.id,
+          jsonrpc: request.jsonrpc,
+        }),
+      (error) => callback(error, null)
+    )
   }
 
   // Provider-wide counter for requests.
@@ -190,23 +213,32 @@ export default class TallyWindowProvider extends EventEmitter {
         }
 
         // let's emmit connected on the first successful response from background
-        if (!this.isConnected) {
-          this.isConnected = true
+        if (!this.connected) {
+          this.connected = true
           this.emit("connect", { chainId: this.chainId })
         }
 
-        if (sentMethod === "eth_chainId" || sentMethod === "net_version") {
+        if (
+          sentMethod === "wallet_switchEthereumChain" ||
+          sentMethod === "wallet_addEthereumChain"
+        ) {
+          // null result indicates successful chain change https://eips.ethereum.org/EIPS/eip-3326#specification
+          if (result === null) {
+            this.handleChainIdChange.bind(this)(
+              (sendData.request.params[0] as { chainId: string }).chainId
+            )
+          }
+        } else if (
+          sentMethod === "eth_chainId" ||
+          sentMethod === "net_version"
+        ) {
           if (
             typeof result === "string" &&
             Number(this.chainId) !== Number(result)
           ) {
-            this.chainId = `0x${Number(result).toString(16)}`
-            this.emit("chainChanged", this.chainId)
-            this.emit("networkChanged", Number(this.chainId).toString())
+            this.handleChainIdChange.bind(this)(result)
           }
-        }
-
-        if (
+        } else if (
           (sentMethod === "eth_accounts" ||
             sentMethod === "eth_requestAccounts") &&
           Array.isArray(result) &&
@@ -224,6 +256,12 @@ export default class TallyWindowProvider extends EventEmitter {
 
       this.transport.addEventListener(this.bridgeListeners.get(sendData.id))
     })
+  }
+
+  handleChainIdChange(chainId: string): void {
+    this.chainId = chainId
+    this.emit("chainChanged", chainId)
+    this.emit("networkChanged", Number(chainId).toString())
   }
 
   handleAddressChange(address: Array<string>): void {

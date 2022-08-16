@@ -4,7 +4,8 @@ import { useParsedValidation, useRunOnFirstRender } from "../../hooks"
 
 interface Props<T> {
   id?: string
-  label: string
+  label?: string
+  maxLength?: number
   focusedLabelBackgroundColor: string
   placeholder?: string
   type: "password" | "text" | "number"
@@ -12,11 +13,15 @@ interface Props<T> {
   onChange?: (value: T | undefined) => void
   onFocus?: () => void
   errorMessage?: string
+  warningMessage?: string
   autoFocus?: boolean
   autoSelect?: boolean
   parseAndValidate: (
     value: string
   ) => { parsed: T | undefined } | { error: string }
+  step?: number
+  isEmpty?: boolean
+  isSmall?: boolean
 }
 
 export function SharedTypedInput<T = string>(props: Props<T>): ReactElement {
@@ -24,15 +29,20 @@ export function SharedTypedInput<T = string>(props: Props<T>): ReactElement {
     id,
     label,
     placeholder,
+    maxLength,
     focusedLabelBackgroundColor,
     type,
     onChange,
     onFocus,
     value: currentValue,
     errorMessage,
+    warningMessage,
+    step = undefined,
     autoFocus = false,
     autoSelect = false,
     parseAndValidate,
+    isEmpty = false,
+    isSmall = false,
   } = props
   const inputRef = useRef<HTMLInputElement | null>(null)
 
@@ -69,20 +79,30 @@ export function SharedTypedInput<T = string>(props: Props<T>): ReactElement {
             ? " "
             : placeholder
         }
-        value={inputValue}
+        value={isEmpty ? "" : inputValue}
         spellCheck={false}
         onInput={(event: ChangeEvent<HTMLInputElement>) =>
           handleInputChange(event.target.value)
         }
         onFocus={onFocus}
         className={classNames({
-          error: errorMessage ?? parserError !== undefined,
+          error: !isEmpty && (errorMessage ?? parserError !== undefined),
+          small: isSmall,
         })}
+        step={step}
         ref={inputRef}
+        maxLength={maxLength}
       />
       <label htmlFor={id}>{label}</label>
-      {errorMessage && <div className="error_message">{errorMessage}</div>}
-      {parserError && <div className="error_message">{parserError}</div>}
+      {!isEmpty && errorMessage && (
+        <div className="validation_message">{errorMessage}</div>
+      )}
+      {!isEmpty && warningMessage && (
+        <div className="validation_message warning">{warningMessage}</div>
+      )}
+      {!isEmpty && parserError && (
+        <div className="validation_message">{parserError}</div>
+      )}
       <style jsx>
         {`
           input {
@@ -105,7 +125,7 @@ export function SharedTypedInput<T = string>(props: Props<T>): ReactElement {
           .error {
             border-color: var(--error);
           }
-          .error_message {
+          .validation_message {
             color: var(--error);
             position: absolute;
             font-weight: 500;
@@ -113,6 +133,9 @@ export function SharedTypedInput<T = string>(props: Props<T>): ReactElement {
             line-height: 20px;
             margin-top: 3px;
             margin-left: 5px;
+          }
+          .warning {
+            color: var(--trophy-gold);
           }
           label {
             position: absolute;
@@ -152,6 +175,19 @@ export function SharedTypedInput<T = string>(props: Props<T>): ReactElement {
           .error ~ label,
           input.error:focus ~ label {
             color: var(--error);
+          }
+          .small {
+            width: 48px;
+            height: 32px;
+            padding: 6px;
+            box-sizing: border-box;
+            border-width: 1px;
+            text-align: right;
+          }
+          .small::-webkit-outer-spin-button,
+          .small::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
           }
         `}
       </style>

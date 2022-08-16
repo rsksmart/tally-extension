@@ -3,13 +3,14 @@ import { useLocation } from "react-router-dom"
 import {
   selectCurrentAccountActivitiesWithTimestamps,
   selectCurrentAccountBalances,
-  selectCurrentAccountSigningMethod,
+  selectCurrentAccountSigner,
 } from "@tallyho/tally-background/redux-slices/selectors"
 import { normalizeEVMAddress } from "@tallyho/tally-background/lib/utils"
 import {
   AnyAsset,
   isSmartContractFungibleAsset,
 } from "@tallyho/tally-background/assets"
+import { ReadOnlyAccountSigner } from "@tallyho/tally-background/services/signing"
 import { useBackgroundSelector } from "../hooks"
 import SharedAssetIcon from "../components/Shared/SharedAssetIcon"
 import SharedButton from "../components/Shared/SharedButton"
@@ -26,9 +27,7 @@ export default function SingleAsset(): ReactElement {
       ? locationAsset.contractAddress
       : undefined
 
-  const currentAccountSigningMethod = useBackgroundSelector(
-    selectCurrentAccountSigningMethod
-  )
+  const currentAccountSigner = useBackgroundSelector(selectCurrentAccountSigner)
 
   const filteredActivities = useBackgroundSelector((state) =>
     (selectCurrentAccountActivitiesWithTimestamps(state) ?? []).filter(
@@ -125,7 +124,7 @@ export default function SingleAsset(): ReactElement {
             )}
           </div>
           <div className="right">
-            {currentAccountSigningMethod ? (
+            {currentAccountSigner !== ReadOnlyAccountSigner ? (
               <>
                 <SharedButton
                   type="primary"

@@ -1,13 +1,15 @@
 import { createSlice } from "@reduxjs/toolkit"
-import { ETH, ETHEREUM } from "../constants"
+import { EVMNetwork } from "../networks"
+import { HexString } from "../types"
 import { createBackgroundAsyncThunk } from "./utils"
 import { enrichAssetAmountWithDecimalValues } from "./utils/asset-utils"
 
 export interface LedgerAccountState {
   path: string
-  address: string | null
+  address: HexString | null
   fetchingAddress: boolean
-  balance: string | null
+  /** Balance by chainID */
+  balance: Record<string, string>
   fetchingBalance: boolean
 }
 
@@ -127,7 +129,7 @@ const ledgerSlice = createSlice({
         path,
         address: null,
         fetchingAddress: false,
-        balance: null,
+        balance: {},
         fetchingBalance: false,
       }
     },
@@ -174,14 +176,21 @@ const ledgerSlice = createSlice({
     resolveBalance: (
       immerState,
       {
-        payload: { deviceID, path, balance },
-      }: { payload: { deviceID: string; path: string; balance: string } }
+        payload: { deviceID, path, balance, network },
+      }: {
+        payload: {
+          deviceID: string
+          path: string
+          balance: string
+          network: EVMNetwork
+        }
+      }
     ) => {
       const device = immerState.devices[deviceID]
       if (!device) return
       const account = device.accounts[path]
       if (!account) return
-      if (account.balance === null) account.balance = balance
+      account.balance[network.chainID] ??= balance
     },
     setUsbDeviceCount: (
       immerState,
@@ -222,7 +231,7 @@ export const fetchAddress = createBackgroundAsyncThunk(
   ) => {
     try {
       dispatch(ledgerSlice.actions.setFetchingAddress({ deviceID, path }))
-      const address = await main.deriveLedgerAddress(path) // FIXME: deviceID is ignored
+      const address = await main.deriveLedgerAddress(deviceID, path) // FIXME: deviceID is ignored
       dispatch(ledgerSlice.actions.resolveAddress({ deviceID, path, address }))
     } catch (err) {
       dispatch(ledgerSlice.actions.resetLedgerState())
@@ -237,20 +246,23 @@ export const fetchBalance = createBackgroundAsyncThunk(
       deviceID,
       path,
       address,
-    }: { deviceID: string; path: string; address: string },
+      network,
+    }: { deviceID: string; path: string; address: string; network: EVMNetwork },
     { dispatch, extra: { main } }
   ) => {
     dispatch(ledgerSlice.actions.setFetchingBalance({ deviceID, path }))
     const amount = await main.getAccountEthBalanceUncached({
       address,
-      network: ETHEREUM,
+      network,
     })
     const decimalDigits = 3
     const balance = enrichAssetAmountWithDecimalValues(
-      { amount, asset: ETH },
+      { amount, asset: network.baseAsset },
       decimalDigits
     ).localizedDecimalAmount
-    dispatch(ledgerSlice.actions.resolveBalance({ deviceID, path, balance }))
+    dispatch(
+      ledgerSlice.actions.resolveBalance({ deviceID, path, balance, network })
+    )
   }
 )
 

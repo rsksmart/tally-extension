@@ -15,7 +15,7 @@ import ForkTsCheckerWebpackPlugin from "fork-ts-checker-webpack-plugin"
 import WebExtensionArchivePlugin from "./build-utils/web-extension-archive-webpack-plugin"
 import InjectWindowProvider from "./build-utils/inject-window-provider"
 
-const supportedBrowsers = ["brave", "chrome", "edge", "firefox", "opera"]
+const supportedBrowsers = ["chrome"]
 
 // Replicated and adjusted for each target browser and the current build mode.
 const baseConfig: Configuration = {
@@ -82,10 +82,6 @@ const baseConfig: Configuration = {
     new SizePlugin({}),
     new CopyPlugin({
       patterns: [
-        {
-          from: "node_modules/@tallyho/tally-ui/_locales/",
-          to: "_locales/",
-        },
         {
           from: "node_modules/@tallyho/tally-ui/public/",
         },

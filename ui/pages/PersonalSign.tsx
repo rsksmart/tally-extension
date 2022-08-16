@@ -1,7 +1,7 @@
 import React, { ReactElement, useState } from "react"
 import {
   getAccountTotal,
-  selectCurrentAccountSigningMethod,
+  selectCurrentAccountSigner,
 } from "@tallyho/tally-background/redux-slices/selectors"
 import {
   rejectDataSignature,
@@ -10,13 +10,16 @@ import {
 } from "@tallyho/tally-background/redux-slices/signing"
 import { SignDataMessageType } from "@tallyho/tally-background/utils/signing"
 import { useHistory } from "react-router-dom"
+import { USE_UPDATED_SIGNING_UI } from "@tallyho/tally-background/features"
+import { ReadOnlyAccountSigner } from "@tallyho/tally-background/services/signing"
 import {
   useBackgroundDispatch,
   useBackgroundSelector,
-  useIsSigningMethodLocked,
+  useIsSignerLocked,
 } from "../hooks"
 import PersonalSignDetailPanel from "./PersonalSignDetailPanel"
 import SignTransactionContainer from "../components/SignTransaction/SignTransactionContainer"
+import Signing from "../components/Signing"
 
 const TITLE: Record<SignDataMessageType, string> = {
   [SignDataMessageType.EIP4361]: "Sign in with Ethereum",
@@ -37,12 +40,25 @@ export default function PersonalSignData(): ReactElement {
     return undefined
   })
 
-  const signingMethod = useBackgroundSelector(selectCurrentAccountSigningMethod)
+  const currentAccountSigner = useBackgroundSelector(selectCurrentAccountSigner)
 
   const [isTransactionSigning, setIsTransactionSigning] = useState(false)
 
-  const isLocked = useIsSigningMethodLocked(signingMethod)
+  const isLocked = useIsSignerLocked(currentAccountSigner)
   if (isLocked) return <></>
+
+  if (USE_UPDATED_SIGNING_UI) {
+    if (currentAccountSigner === null || signingDataRequest === undefined) {
+      return <></>
+    }
+
+    return (
+      <Signing
+        accountSigner={currentAccountSigner}
+        request={signingDataRequest}
+      />
+    )
+  }
 
   if (
     typeof signingDataRequest === "undefined" ||
@@ -52,10 +68,15 @@ export default function PersonalSignData(): ReactElement {
   }
 
   const handleConfirm = () => {
-    if (signingMethod === null) return
+    if (currentAccountSigner === ReadOnlyAccountSigner) return
     if (signingDataRequest === undefined) return
 
-    dispatch(signData({ request: signingDataRequest, signingMethod }))
+    dispatch(
+      signData({
+        request: signingDataRequest,
+        accountSigner: currentAccountSigner,
+      })
+    )
     setIsTransactionSigning(true)
   }
 

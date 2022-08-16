@@ -1,5 +1,6 @@
 import browser, { runtime } from "webextension-polyfill"
 import { alias, wrapStore } from "webext-redux"
+import deepDiff from "webext-redux/lib/strategies/deepDiff/diff"
 import { configureStore, isPlain, Middleware } from "@reduxjs/toolkit"
 import { devToolsEnhancer } from "@redux-devtools/remote"
 import { PermissionRequest } from "@tallyho/provider-bridge-shared"
@@ -29,13 +30,14 @@ import {
   SigningService,
 } from "./services"
 
-import { EIP712TypedData, HexString, KeyringTypes } from "./types"
-import { SignedEVMTransaction } from "./networks"
+import { HexString, KeyringTypes } from "./types"
+import { AnyEVMTransaction, SignedTransaction } from "./networks"
 import { AccountBalance, AddressOnNetwork, NameOnNetwork } from "./accounts"
 import { Eligible } from "./services/doggo/types"
 
 import rootReducer from "./redux-slices"
 import {
+  deleteAccount,
   loadAccount,
   updateAccountBalance,
   updateAccountName,
@@ -69,19 +71,20 @@ import {
   estimatedFeesPerGas,
   emitter as transactionConstructionSliceEmitter,
   transactionRequest,
-  updateTransactionOptions,
+  updateTransactionData,
   clearTransactionState,
-  selectDefaultNetworkFeeSettings,
   TransactionConstructionStatus,
   rejectTransactionSignature,
   transactionSigned,
+  clearCustomGas,
 } from "./redux-slices/transaction-construction"
+import { selectDefaultNetworkFeeSettings } from "./redux-slices/selectors/transactionConstructionSelectors"
 import { allAliases } from "./redux-slices/utils"
 import {
   requestPermission,
   emitter as providerBridgeSliceEmitter,
-  initializeAllowedPages,
-} from "./redux-slices/dapp-permission"
+  initializePermissions,
+} from "./redux-slices/dapp"
 import logger from "./lib/logger"
 import {
   rejectDataSignature,
@@ -93,25 +96,36 @@ import {
   signDataRequest,
 } from "./redux-slices/signing"
 
-import {
-  SigningMethod,
-  SignTypedDataRequest,
-  SignDataRequest,
-} from "./utils/signing"
+import { SignTypedDataRequest, SignDataRequest } from "./utils/signing"
 import {
   emitter as earnSliceEmitter,
   setVaultsAsStale,
 } from "./redux-slices/earn"
 import {
-  LedgerState,
   resetLedgerState,
   setDeviceConnectionStatus,
   setUsbDeviceCount,
 } from "./redux-slices/ledger"
-import { ETHEREUM } from "./constants"
-import { clearApprovalInProgress } from "./redux-slices/0x-swap"
-import { SignatureResponse, TXSignatureResponse } from "./services/signing"
+import { ETHEREUM, OPTIMISM, POLYGON } from "./constants"
+import { clearApprovalInProgress, clearSwapQuote } from "./redux-slices/0x-swap"
+import {
+  SignatureResponse,
+  SignerType,
+  TXSignatureResponse,
+} from "./services/signing"
 import { ReferrerStats } from "./services/doggo/db"
+import {
+  migrateReduxState,
+  REDUX_STATE_VERSION,
+} from "./redux-slices/migrations"
+import { PermissionMap } from "./services/provider-bridge/utils"
+import { TALLY_INTERNAL_ORIGIN } from "./services/internal-ethereum-provider/constants"
+import { deleteNFts } from "./redux-slices/nfts"
+import { filterTransactionPropsForUI } from "./utils/view-model-transformer"
+import {
+  EnrichedEVMTransaction,
+  EnrichedEVMTransactionRequest,
+} from "./services/enrichment"
 
 // This sanitizer runs on store and action data before serializing for remote
 // redux devtools. The goal is to end up with an object that is directly
@@ -129,233 +143,6 @@ const devToolsSanitizer = (input: unknown) => {
     default:
       return input
   }
-}
-
-// The version of persisted Redux state the extension is expecting. Any previous
-// state without this version, or with a lower version, ought to be migrated.
-const REDUX_STATE_VERSION = 7
-
-type Migration = (prevState: Record<string, unknown>) => Record<string, unknown>
-
-// An object mapping a version number to a state migration. Each migration for
-// version n is expected to take a state consistent with version n-1, and return
-// state consistent with version n.
-const REDUX_MIGRATIONS: { [version: number]: Migration } = {
-  2: (prevState: Record<string, unknown>) => {
-    // Migrate the old currentAccount SelectedAccount type to a bare
-    // selectedAccount AddressNetwork type. Note the avoidance of imported types
-    // so this migration will work in the future, regardless of other code changes
-    type BroadAddressNetwork = {
-      address: string
-      network: Record<string, unknown>
-    }
-    type OldState = {
-      ui: {
-        currentAccount?: {
-          addressNetwork: BroadAddressNetwork
-          truncatedAddress: string
-        }
-      }
-    }
-    const newState = { ...prevState }
-    const addressNetwork = (prevState as OldState)?.ui?.currentAccount
-      ?.addressNetwork
-    delete (newState as OldState)?.ui?.currentAccount
-    newState.selectedAccount = addressNetwork as BroadAddressNetwork
-    return newState
-  },
-  3: (prevState: Record<string, unknown>) => {
-    const { assets, ...newState } = prevState
-
-    // Clear assets collection; these should be immediately repopulated by the
-    // IndexingService in startService.
-    newState.assets = []
-
-    return newState
-  },
-  4: (prevState: Record<string, unknown>) => {
-    // Migrate the ETH-only block data in store.accounts.blocks[blockHeight] to
-    // a new networks slice. Block data is now network-specific, keyed by EVM
-    // chainID in store.networks.networkData[chainId].blocks
-    type OldState = {
-      account?: {
-        blocks?: { [blockHeight: number]: unknown }
-      }
-    }
-    type NetworkState = {
-      evm: {
-        [chainID: string]: {
-          blockHeight: number | null
-          blocks: {
-            [blockHeight: number]: unknown
-          }
-        }
-      }
-    }
-
-    const oldState = prevState as OldState
-
-    const networks: NetworkState = {
-      evm: {
-        "1": {
-          blocks: { ...oldState.account?.blocks },
-          blockHeight:
-            Math.max(
-              ...Object.keys(oldState.account?.blocks ?? {}).map((s) =>
-                parseInt(s, 10)
-              )
-            ) || null,
-        },
-      },
-    }
-
-    const { blocks, ...oldStateAccountWithoutBlocks } = oldState.account ?? {
-      blocks: undefined,
-    }
-
-    return {
-      ...prevState,
-      // Drop blocks from account slice.
-      account: oldStateAccountWithoutBlocks,
-      // Add new networks slice data.
-      networks,
-    }
-  },
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  5: (prevState: any) => {
-    const { ...newState } = prevState
-    newState.keyrings.keyringMetadata = {}
-
-    return newState
-  },
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  6: (prevState: any) => {
-    const { ...newState } = prevState
-
-    // A user might be upgrading from version without the `ledger` key in the redux store - so we
-    // initialize it here if that is the case.
-    if (!newState.ledger) {
-      newState.ledger = {
-        currentDeviceID: null,
-        devices: {},
-        usbDeviceCount: 0,
-      }
-      return newState
-    }
-
-    Object.keys(newState.ledger.devices).forEach((deviceId) => {
-      ;(newState.ledger as LedgerState).devices[
-        deviceId
-      ].isArbitraryDataSigningEnabled = false
-    })
-
-    return newState
-  },
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  7: (prevState: any) => {
-    type OldState = {
-      activities: {
-        [address: string]: {
-          ids: string[]
-          entities: {
-            [id: string]: {
-              blockHeight: number | null
-              annotation: Record<string, unknown>
-            }
-          }
-        }
-      }
-      networks: {
-        evm: {
-          "1": {
-            blocks?: {
-              [blockHeight: number]: {
-                timestamp: number | undefined
-              }
-            }
-            blockHeight: number
-          }
-        }
-      }
-    }
-
-    const oldState = prevState as OldState
-    const { activities } = oldState
-
-    type NewEntity = {
-      [id: string]: {
-        blockHeight: number | null
-        annotation: {
-          blockTimestamp?: number
-        }
-      }
-    }
-    type NewActivitiesState = {
-      [address: string]: {
-        ids: string[]
-        entities: NewEntity
-      }
-    }
-
-    const newActivitiesState: NewActivitiesState = {}
-
-    const { blocks } = oldState.networks.evm["1"]
-
-    // Grab timestamps off of blocks, add them as activity annotations
-    Object.keys(activities).forEach((accountActivitiesAddress: string) => {
-      const accountActivities = activities[accountActivitiesAddress]
-      const newEntities: NewEntity = {}
-      accountActivities.ids.forEach((activityItemID: string) => {
-        const activityItem = accountActivities.entities[activityItemID]
-        newEntities[activityItemID] = {
-          ...activityItem,
-          annotation: {
-            ...activityItem.annotation,
-            blockTimestamp: activityItem.blockHeight
-              ? blocks && blocks[activityItem.blockHeight]?.timestamp
-              : undefined,
-          },
-        }
-      })
-      newActivitiesState[accountActivitiesAddress] = {
-        ids: accountActivities.ids,
-        entities: newEntities,
-      }
-    })
-
-    const { ...newState } = oldState
-    // Remove blocks
-    delete newState.networks.evm["1"].blocks // Only mainnet exists at this time
-    return {
-      ...newState,
-      activities: newActivitiesState,
-    }
-  },
-}
-
-// Migrate a previous version of the Redux state to that expected by the current
-// code base.
-function migrateReduxState(
-  previousState: Record<string, unknown>,
-  previousVersion?: number
-): Record<string, unknown> {
-  const resolvedVersion = previousVersion ?? 1
-  let migratedState: Record<string, unknown> = previousState
-
-  if (resolvedVersion < REDUX_STATE_VERSION) {
-    const outstandingMigrations = Object.entries(REDUX_MIGRATIONS)
-      .sort()
-      .filter(([version]) => parseInt(version, 10) > resolvedVersion)
-      .map(([, migration]) => migration)
-    migratedState = outstandingMigrations.reduce(
-      (state: Record<string, unknown>, migration: Migration) => {
-        return migration(state)
-      },
-      migratedState
-    )
-  }
-
-  return migratedState
 }
 
 const reduxCache: Middleware = (store) => (next) => (action) => {
@@ -588,6 +375,7 @@ export default class Main extends BaseService<never> {
     wrapStore(this.store, {
       serializer: encodeJSON,
       deserializer: decodeJSON,
+      diffStrategy: deepDiff,
       dispatchResponder: async (
         dispatchResult: Promise<unknown>,
         send: (param: { error: string | null; value: unknown | null }) => void
@@ -687,24 +475,25 @@ export default class Main extends BaseService<never> {
   }
 
   addOrEditAddressName({
-    name,
     address,
-  }: {
-    name: string
-    address: HexString
-  }): void {
+    network,
+    name,
+  }: AddressOnNetwork & { name: string }): void {
     this.preferenceService.addOrEditNameInAddressBook({
-      network: ETHEREUM,
-      name,
       address,
+      network,
+      name,
     })
   }
 
   async removeAccount(
     address: HexString,
-    signingMethod: SigningMethod
+    signerType?: SignerType
   ): Promise<void> {
-    await this.signingService.removeAccount(address, signingMethod)
+    this.store.dispatch(deleteAccount(address))
+    this.store.dispatch(deleteNFts(address))
+    // TODO Adjust to handle specific network.
+    await this.signingService.removeAccount(address, signerType)
   }
 
   async importLedgerAccounts(
@@ -713,27 +502,41 @@ export default class Main extends BaseService<never> {
       address: string
     }>
   ): Promise<void> {
-    for (let i = 0; i < accounts.length; i += 1) {
-      const { path, address } = accounts[i]
+    await Promise.all(
+      accounts.map(async ({ path, address }) => {
+        await this.ledgerService.saveAddress(path, address)
 
-      // eslint-disable-next-line no-await-in-loop
-      await this.ledgerService.saveAddress(path, address)
-
-      const addressNetwork = {
-        address,
-        network: ETHEREUM,
-      }
-      this.store.dispatch(loadAccount(address))
-      // eslint-disable-next-line no-await-in-loop
-      await this.chainService.addAccountToTrack(addressNetwork)
-      this.store.dispatch(setNewSelectedAccount(addressNetwork))
-    }
+        await Promise.all(
+          this.chainService.supportedNetworks.map(async (network) => {
+            const addressNetwork = {
+              address,
+              network,
+            }
+            await this.chainService.addAccountToTrack(addressNetwork)
+            this.store.dispatch(loadAccount(addressNetwork))
+          })
+        )
+      })
+    )
+    this.store.dispatch(
+      setNewSelectedAccount({
+        address: accounts[0].address,
+        network:
+          await this.internalEthereumProviderService.getActiveOrDefaultNetwork(
+            TALLY_INTERNAL_ORIGIN
+          ),
+      })
+    )
   }
 
-  async deriveLedgerAddress(path: string): Promise<string> {
+  async deriveLedgerAddress(
+    deviceID: string,
+    derivationPath: string
+  ): Promise<string> {
     return this.signingService.deriveAddress({
       type: "ledger",
-      accountID: path,
+      deviceID,
+      path: derivationPath,
     })
   }
 
@@ -781,60 +584,65 @@ export default class Main extends BaseService<never> {
       )
     })
 
-    transactionConstructionSliceEmitter.on("updateOptions", async (options) => {
-      // TODO support multiple networks
-      const network = ETHEREUM
+    transactionConstructionSliceEmitter.on(
+      "updateTransaction",
+      async (options) => {
+        const { network } = options
 
-      const {
-        values: { maxFeePerGas, maxPriorityFeePerGas },
-      } = selectDefaultNetworkFeeSettings(this.store.getState())
+        const {
+          values: { maxFeePerGas, maxPriorityFeePerGas },
+        } = selectDefaultNetworkFeeSettings(this.store.getState())
 
-      const { transactionRequest: populatedRequest, gasEstimationError } =
-        await this.chainService.populatePartialEVMTransactionRequest(network, {
-          ...options,
-          maxFeePerGas: options.maxFeePerGas ?? maxFeePerGas,
-          maxPriorityFeePerGas:
-            options.maxPriorityFeePerGas ?? maxPriorityFeePerGas,
-        })
+        const { transactionRequest: populatedRequest, gasEstimationError } =
+          await this.chainService.populatePartialTransactionRequest(
+            network,
+            { ...options },
+            { maxFeePerGas, maxPriorityFeePerGas }
+          )
 
-      const { annotation } =
-        await this.enrichmentService.enrichTransactionSignature(
-          network,
-          populatedRequest,
-          2 /* TODO desiredDecimals should be configurable */
-        )
-      const enrichedPopulatedRequest = { ...populatedRequest, annotation }
+        const { annotation } =
+          await this.enrichmentService.enrichTransactionSignature(
+            network,
+            populatedRequest,
+            2 /* TODO desiredDecimals should be configurable */
+          )
 
-      if (typeof gasEstimationError === "undefined") {
-        this.store.dispatch(
-          transactionRequest({
-            transactionRequest: enrichedPopulatedRequest,
-            transactionLikelyFails: false,
-          })
-        )
-      } else {
-        this.store.dispatch(
-          transactionRequest({
-            transactionRequest: enrichedPopulatedRequest,
-            transactionLikelyFails: true,
-          })
-        )
+        const enrichedPopulatedRequest: EnrichedEVMTransactionRequest = {
+          ...populatedRequest,
+          annotation,
+        }
+
+        if (typeof gasEstimationError === "undefined") {
+          this.store.dispatch(
+            transactionRequest({
+              transactionRequest: enrichedPopulatedRequest,
+              transactionLikelyFails: false,
+            })
+          )
+        } else {
+          this.store.dispatch(
+            transactionRequest({
+              transactionRequest: enrichedPopulatedRequest,
+              transactionLikelyFails: true,
+            })
+          )
+        }
       }
-    })
+    )
 
     transactionConstructionSliceEmitter.on(
       "broadcastSignedTransaction",
-      async (transaction: SignedEVMTransaction) => {
+      async (transaction: SignedTransaction) => {
         this.chainService.broadcastSignedTransaction(transaction)
       }
     )
 
     transactionConstructionSliceEmitter.on(
       "requestSignature",
-      async ({ transaction, method }) => {
+      async ({ request, accountSigner }) => {
         try {
           const signedTransactionResult =
-            await this.signingService.signTransaction(transaction, method)
+            await this.signingService.signTransaction(request, accountSigner)
           await this.store.dispatch(transactionSigned(signedTransactionResult))
         } catch (exception) {
           logger.error("Error signing transaction", exception)
@@ -846,20 +654,12 @@ export default class Main extends BaseService<never> {
     )
     signingSliceEmitter.on(
       "requestSignTypedData",
-      async ({
-        typedData,
-        account,
-        signingMethod,
-      }: {
-        typedData: EIP712TypedData
-        account: HexString
-        signingMethod: SigningMethod
-      }) => {
+      async ({ typedData, account, accountSigner }) => {
         try {
           const signedData = await this.signingService.signTypedData({
             typedData,
             account,
-            signingMethod,
+            accountSigner,
           })
           this.store.dispatch(signedTypedData(signedData))
         } catch (err) {
@@ -870,11 +670,11 @@ export default class Main extends BaseService<never> {
     )
     signingSliceEmitter.on(
       "requestSignData",
-      async ({ rawSigningData, account, signingMethod }) => {
+      async ({ rawSigningData, account, accountSigner }) => {
         const signedData = await this.signingService.signData(
           account,
           rawSigningData,
-          signingMethod
+          accountSigner
         )
         this.store.dispatch(signedDataAction(signedData))
       }
@@ -884,20 +684,26 @@ export default class Main extends BaseService<never> {
     const existingAccounts = await this.chainService.getAccountsToTrack()
     existingAccounts.forEach((addressNetwork) => {
       // Mark as loading and wire things up.
-      this.store.dispatch(loadAccount(addressNetwork.address))
+      this.store.dispatch(loadAccount(addressNetwork))
 
       // Force a refresh of the account balance to populate the store.
       this.chainService.getLatestBaseAccountBalance(addressNetwork)
     })
 
-    this.chainService.emitter.on("blockPrices", (blockPrices) => {
-      this.store.dispatch(estimatedFeesPerGas(blockPrices))
+    this.chainService.emitter.on("blockPrices", ({ blockPrices, network }) => {
+      this.store.dispatch(
+        estimatedFeesPerGas({ estimatedFeesPerGas: blockPrices, network })
+      )
     })
 
     // Report on transactions for basic activity. Fancier stuff is handled via
     // connectEnrichmentService
     this.chainService.emitter.on("transaction", async (transactionInfo) => {
-      this.store.dispatch(activityEncountered(transactionInfo))
+      this.store.dispatch(
+        activityEncountered(
+          filterTransactionPropsForUI<AnyEVMTransaction>(transactionInfo)
+        )
+      )
     })
   }
 
@@ -966,7 +772,11 @@ export default class Main extends BaseService<never> {
         this.indexingService.notifyEnrichedTransaction(
           transactionData.transaction
         )
-        this.store.dispatch(activityEncountered(transactionData))
+        this.store.dispatch(
+          activityEncountered(
+            filterTransactionPropsForUI<EnrichedEVMTransaction>(transactionData)
+          )
+        )
       }
     )
   }
@@ -1010,20 +820,24 @@ export default class Main extends BaseService<never> {
   }
 
   async connectKeyringService(): Promise<void> {
-    // TODO support other networks
-    const network = ETHEREUM
-
     this.keyringService.emitter.on("keyrings", (keyrings) => {
       this.store.dispatch(updateKeyrings(keyrings))
     })
 
     this.keyringService.emitter.on("address", (address) => {
-      // Mark as loading and wire things up.
-      this.store.dispatch(loadAccount(address))
+      this.chainService.supportedNetworks.forEach((network) => {
+        // Mark as loading and wire things up.
+        this.store.dispatch(
+          loadAccount({
+            address,
+            network,
+          })
+        )
 
-      this.chainService.addAccountToTrack({
-        address,
-        network,
+        this.chainService.addAccountToTrack({
+          address,
+          network,
+        })
       })
     })
 
@@ -1046,7 +860,7 @@ export default class Main extends BaseService<never> {
     keyringSliceEmitter.on("deriveAddress", async (keyringID) => {
       await this.signingService.deriveAddress({
         type: "keyring",
-        accountID: keyringID,
+        keyringID,
       })
     })
 
@@ -1077,7 +891,7 @@ export default class Main extends BaseService<never> {
         this.store.dispatch(
           clearTransactionState(TransactionConstructionStatus.Pending)
         )
-        this.store.dispatch(updateTransactionOptions(payload))
+        this.store.dispatch(updateTransactionData(payload))
 
         const clear = () => {
           // Mutual dependency to handleAndClear.
@@ -1224,6 +1038,15 @@ export default class Main extends BaseService<never> {
         signingSliceEmitter.on("signatureRejected", rejectAndClear)
       }
     )
+
+    uiSliceEmitter.on("newSelectedNetwork", (network) => {
+      this.internalEthereumProviderService.routeSafeRPCRequest(
+        "wallet_switchEthereumChain",
+        [{ chainId: network.chainID }],
+        TALLY_INTERNAL_ORIGIN
+      )
+      this.store.dispatch(clearCustomGas())
+    })
   }
 
   async connectProviderBridgeService(): Promise<void> {
@@ -1236,8 +1059,8 @@ export default class Main extends BaseService<never> {
 
     this.providerBridgeService.emitter.on(
       "initializeAllowedPages",
-      async (allowedPages: Record<string, PermissionRequest>) => {
-        this.store.dispatch(initializeAllowedPages(allowedPages))
+      async (allowedPages: PermissionMap) => {
+        this.store.dispatch(initializePermissions(allowedPages))
       }
     )
 
@@ -1275,13 +1098,27 @@ export default class Main extends BaseService<never> {
     )
 
     providerBridgeSliceEmitter.on("grantPermission", async (permission) => {
-      await this.providerBridgeService.grantPermission(permission)
+      await Promise.all(
+        [ETHEREUM, POLYGON, OPTIMISM].map(async (network) => {
+          await this.providerBridgeService.grantPermission({
+            ...permission,
+            chainID: network.chainID,
+          })
+        })
+      )
     })
 
     providerBridgeSliceEmitter.on(
       "denyOrRevokePermission",
       async (permission) => {
-        await this.providerBridgeService.denyOrRevokePermission(permission)
+        await Promise.all(
+          this.chainService.supportedNetworks.map(async (network) => {
+            await this.providerBridgeService.denyOrRevokePermission({
+              ...permission,
+              chainID: network.chainID,
+            })
+          })
+        )
       }
     )
   }
@@ -1318,6 +1155,7 @@ export default class Main extends BaseService<never> {
     uiSliceEmitter.on("newSelectedAccount", async (addressNetwork) => {
       await this.preferenceService.setSelectedAccount(addressNetwork)
 
+      this.store.dispatch(clearSwapQuote())
       this.store.dispatch(setEligibilityLoading())
       this.doggoService.getEligibility(addressNetwork.address)
 
