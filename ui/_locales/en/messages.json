@@ -15,6 +15,7 @@
   "protocol": {
     "mainnet": "Mainnet",
     "testnet": "Test Network",
+    "rsk": "RSK Mainnet",
     "l2": "L2 scaling solution",
     "compatibleChain": "Ethereum-compatible blockchain",
     "connected": "Connected"
