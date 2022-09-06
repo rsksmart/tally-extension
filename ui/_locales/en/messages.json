@@ -67,6 +67,7 @@
     "enableTestNetworks": "Enable test networks",
     "language": "Language",
     "bugReport": "Bug report",
+    "connectedWebsites": "Connected websites",
     "analytics": "Analytics",
     "joinTitle": "Join our community",
     "joinDesc": "Join our Discord to give us feedback!",
@@ -108,6 +109,12 @@
         "submitBtn": "Yes, delete data",
         "snackbar": "Private data will be removed soon"
       }
+    },
+    "connectedWebsitesSettings": {
+      "title": "Connected websites",
+      "disconnected": "Website disconnected",
+      "ariaLabel": "Manage connected websites",
+      "emptyList": "Not connected to any websites"
     }
   },
   "passwordStrength": {
