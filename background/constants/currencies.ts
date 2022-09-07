@@ -51,11 +51,11 @@ export const MATIC: FungibleAsset & CoinGeckoAsset & NetworkBaseAsset = {
   },
 }
 
-export const RBTC: FungibleAsset & CoinGeckoAsset & NetworkBaseAsset = {
-  name: "RSK Token",
-  symbol: "RBTC",
+export const tRBTC: FungibleAsset & CoinGeckoAsset & NetworkBaseAsset = {
+  name: "RSK Testnet Token",
+  symbol: "tRBTC",
   decimals: 18,
-  coinType: coinTypesByAssetSymbol.ETH,
+  coinType: coinTypesByAssetSymbol.tRBTC,
   metadata: {
     coinGeckoID: "rootstock",
     tokenLists: [],
@@ -75,7 +75,7 @@ export const BTC: FungibleAsset & CoinGeckoAsset & NetworkBaseAsset = {
   },
 }
 
-export const BASE_ASSETS = [ETH, BTC, MATIC, OPTIMISTIC_ETH]
+export const BASE_ASSETS = [ETH, BTC, MATIC, tRBTC, OPTIMISTIC_ETH]
 
 export const BASE_ASSETS_BY_SYMBOL = BASE_ASSETS.reduce<{
   [assetSymbol: string]: FungibleAsset & CoinGeckoAsset & NetworkBaseAsset

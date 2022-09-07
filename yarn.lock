@@ -3217,18 +3217,18 @@
     "@ethersproject/wallet" "5.6.1"
     "bip39" "3.0.4"
 
-"@tallyho/provider-bridge-shared@0.0.1", "@tallyho/provider-bridge-shared@file:/Users/evelinabuiciag/Documents/NewTally/tally-extension/provider-bridge-shared":
+"@tallyho/provider-bridge-shared@0.0.1", "@tallyho/provider-bridge-shared@file:/Users/evelinabuiciag/Documents/Tally/tally-extension/provider-bridge-shared":
   "resolved" "file:provider-bridge-shared"
   "version" "0.0.1"
 
-"@tallyho/provider-bridge@file:/Users/evelinabuiciag/Documents/NewTally/tally-extension/provider-bridge":
+"@tallyho/provider-bridge@file:/Users/evelinabuiciag/Documents/Tally/tally-extension/provider-bridge":
   "resolved" "file:provider-bridge"
   "version" "0.0.1"
   dependencies:
     "@tallyho/provider-bridge-shared" "0.0.1"
     "webextension-polyfill" "^0.8.0"
 
-"@tallyho/tally-background@0.0.1", "@tallyho/tally-background@file:/Users/evelinabuiciag/Documents/NewTally/tally-extension/background":
+"@tallyho/tally-background@0.0.1", "@tallyho/tally-background@file:/Users/evelinabuiciag/Documents/Tally/tally-extension/background":
   "resolved" "file:background"
   "version" "0.0.1"
   dependencies:
@@ -3266,7 +3266,7 @@
     "util" "^0.12.4"
     "webextension-polyfill" "^0.8.0"
 
-"@tallyho/tally-ui@file:/Users/evelinabuiciag/Documents/NewTally/tally-extension/ui":
+"@tallyho/tally-ui@file:/Users/evelinabuiciag/Documents/Tally/tally-extension/ui":
   "resolved" "file:ui"
   "version" "0.0.1"
   dependencies:
@@ -3297,7 +3297,7 @@
     "webextension-polyfill" "^0.8.0"
     "zxcvbn" "^4.4.2"
 
-"@tallyho/window-provider@0.0.1", "@tallyho/window-provider@file:/Users/evelinabuiciag/Documents/NewTally/tally-extension/window-provider":
+"@tallyho/window-provider@0.0.1", "@tallyho/window-provider@file:/Users/evelinabuiciag/Documents/Tally/tally-extension/window-provider":
   "resolved" "file:window-provider"
   "version" "0.0.1"
   dependencies:
@@ -4155,12 +4155,7 @@
   "resolved" "https://registry.npmjs.org/acorn-walk/-/acorn-walk-8.2.0.tgz"
   "version" "8.2.0"
 
-"acorn@^6.0.0 || ^7.0.0 || ^8.0.0", "acorn@^7.4.0":
-  "integrity" "sha512-nQyp0o1/mNdbTO1PO6kHkwSrmgZ0MT/jCCpNiwbUjGoRN4dlBhqJtoQuCnEOKzgTVwg0ZWiCoQy6SxMebQVh8A=="
-  "resolved" "https://registry.npmjs.org/acorn/-/acorn-7.4.1.tgz"
-  "version" "7.4.1"
-
-"acorn@^7.1.1":
+"acorn@^6.0.0 || ^7.0.0 || ^8.0.0", "acorn@^7.1.1", "acorn@^7.4.0":
   "integrity" "sha512-nQyp0o1/mNdbTO1PO6kHkwSrmgZ0MT/jCCpNiwbUjGoRN4dlBhqJtoQuCnEOKzgTVwg0ZWiCoQy6SxMebQVh8A=="
   "resolved" "https://registry.npmjs.org/acorn/-/acorn-7.4.1.tgz"
   "version" "7.4.1"
@@ -6356,7 +6351,7 @@
   dependencies:
     "once" "^1.4.0"
 
-"enhanced-resolve@^5.0.0", "enhanced-resolve@^5.8.0":
+"enhanced-resolve@^5.0.0":
   "integrity" "sha512-F27oB3WuHDzvR2DOGNTaYy0D5o0cnrv8TeI482VM4kYgQd/FT9lUQwuNsJ0oOHtBUq7eiW5ytqzp7nBFknL+GA=="
   "resolved" "https://registry.npmjs.org/enhanced-resolve/-/enhanced-resolve-5.8.2.tgz"
   "version" "5.8.2"
@@ -6506,11 +6501,6 @@
     "string.prototype.trimend" "^1.0.4"
     "string.prototype.trimstart" "^1.0.4"
     "unbox-primitive" "^1.0.1"
-
-"es-module-lexer@^0.7.1":
-  "integrity" "sha512-MgtWFl5No+4S3TmhDmCz2ObFGm6lEpTnzbQi+Dd+pw4mlTIZTmM2iAs5gRlmx5zS9luzobCSBSI90JM/1/JgOw=="
-  "resolved" "https://registry.npmjs.org/es-module-lexer/-/es-module-lexer-0.7.1.tgz"
-  "version" "0.7.1"
 
 "es-module-lexer@^0.9.0":
   "integrity" "sha512-1HQ2M2sPtxwnvOvT1ZClHyQDiggdNjURWpY2we6aMKCQiUVxTmVs2UYPLIrD84sS+kMdUwfBSylbJPwNnBrnHQ=="

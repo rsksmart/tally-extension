@@ -1,5 +1,5 @@
 import { EVMNetwork, Network } from "../networks"
-import { BTC, ETH, MATIC, OPTIMISTIC_ETH, RBTC } from "./currencies"
+import { BTC, ETH, MATIC, OPTIMISTIC_ETH, tRBTC } from "./currencies"
 
 export const ETHEREUM: EVMNetwork = {
   name: "Ethereum",
@@ -18,8 +18,8 @@ export const POLYGON: EVMNetwork = {
 }
 export const RSK: EVMNetwork = {
   name: "RSK",
-  baseAsset: RBTC,
-  chainID: "30",
+  baseAsset: tRBTC,
+  chainID: "31",
   family: "EVM",
   coingeckoPlatformID: "rootstock",
 }

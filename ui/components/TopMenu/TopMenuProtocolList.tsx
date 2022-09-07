@@ -39,8 +39,7 @@ const productionNetworks = [
     : [
         {
           network: RSK,
-          info: i18n.t("comingSoon"),
-          isDisabled: true,
+          info: i18n.t("protocol.rsk"),
         },
       ]),
   ...(SUPPORT_OPTIMISM
