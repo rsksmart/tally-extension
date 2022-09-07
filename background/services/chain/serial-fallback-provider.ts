@@ -673,10 +673,15 @@ export function makeSerialFallbackProvider(
   return new SerialFallbackProvider(
     network,
     () =>
-      new AlchemyWebSocketProvider(
-        getNetwork(Number(network.chainID)),
-        ALCHEMY_KEY
-      ),
-    () => new AlchemyProvider(getNetwork(Number(network.chainID)), ALCHEMY_KEY)
+      network.chainID === "31"
+        ? new WebSocketProvider("wss://public-node.testnet.rsk.co/websocket")
+        : new AlchemyWebSocketProvider(
+            getNetwork(Number(network.chainID)),
+            ALCHEMY_KEY
+          ),
+    () =>
+      network.chainID === "31"
+        ? new JsonRpcProvider("https://public-node.testnet.rsk.co")
+        : new AlchemyProvider(getNetwork(Number(network.chainID)), ALCHEMY_KEY)
   )
 }

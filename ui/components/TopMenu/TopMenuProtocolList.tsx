@@ -5,11 +5,13 @@ import {
   GOERLI,
   OPTIMISM,
   POLYGON,
+  RSK,
 } from "@tallyho/tally-background/constants"
 import {
   SUPPORT_ARBITRUM,
   SUPPORT_GOERLI,
   SUPPORT_OPTIMISM,
+  SUPPORT_RSK,
 } from "@tallyho/tally-background/features"
 import { sameNetwork } from "@tallyho/tally-background/networks"
 import { selectCurrentNetwork } from "@tallyho/tally-background/redux-slices/selectors"
@@ -39,6 +41,19 @@ const productionNetworks = [
           network: OPTIMISM,
           info: i18n.t("comingSoon"),
           isDisabled: true,
+        },
+      ]),
+  ...(SUPPORT_RSK
+    ? [
+        {
+          network: RSK,
+          info: i18n.t("protocol.rsk"),
+        },
+      ]
+    : [
+        {
+          network: RSK,
+          info: i18n.t("protocol.rsk"),
         },
       ]),
   ...(SUPPORT_ARBITRUM

@@ -1,5 +1,5 @@
 import { EVMNetwork, Network } from "../networks"
-import { BTC, ETH, MATIC, OPTIMISTIC_ETH } from "./currencies"
+import { BTC, ETH, MATIC, tRBTC, OPTIMISTIC_ETH } from "./currencies"
 
 export const ETHEREUM: EVMNetwork = {
   name: "Ethereum",
@@ -15,6 +15,14 @@ export const POLYGON: EVMNetwork = {
   chainID: "137",
   family: "EVM",
   coingeckoPlatformID: "polygon-pos",
+}
+
+export const RSK: EVMNetwork = {
+  name: "RSK",
+  baseAsset: tRBTC,
+  chainID: "31",
+  family: "EVM",
+  coingeckoPlatformID: "rootstock",
 }
 
 export const ARBITRUM_ONE: EVMNetwork = {
@@ -81,7 +89,7 @@ export const FORK: EVMNetwork = {
 }
 
 export const EIP_1559_COMPLIANT_CHAIN_IDS = new Set(
-  [ETHEREUM, POLYGON, GOERLI].map((network) => network.chainID)
+  [ETHEREUM, POLYGON, GOERLI, RSK].map((network) => network.chainID)
 )
 export const EVM_ROLLUP_CHAIN_IDS = new Set(
   [OPTIMISM].map((network) => network.chainID)
@@ -90,6 +98,7 @@ export const EVM_ROLLUP_CHAIN_IDS = new Set(
 export const NETWORK_BY_CHAIN_ID = {
   [ETHEREUM.chainID]: ETHEREUM,
   [POLYGON.chainID]: POLYGON,
+  [RSK.chainID]: RSK,
   [ARBITRUM_ONE.chainID]: ARBITRUM_ONE,
   [OPTIMISM.chainID]: OPTIMISM,
   [ROPSTEN.chainID]: ROPSTEN,

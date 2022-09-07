@@ -22,6 +22,7 @@ import {
   HOUR,
   ETHEREUM,
   POLYGON,
+  RSK,
   ARBITRUM_ONE,
   OPTIMISM,
   EVM_ROLLUP_CHAIN_IDS,
@@ -31,6 +32,7 @@ import {
 import {
   SUPPORT_ARBITRUM,
   SUPPORT_OPTIMISM,
+  SUPPORT_RSK,
   USE_MAINNET_FORK,
 } from "../../features"
 import PreferenceService from "../preferences"
@@ -232,6 +234,7 @@ export default class ChainService extends BaseService<Events> {
       ETHEREUM,
       POLYGON,
       GOERLI,
+      ...(SUPPORT_RSK ? [RSK] : []),
       ...(SUPPORT_ARBITRUM ? [ARBITRUM_ONE] : []),
       ...(SUPPORT_OPTIMISM ? [OPTIMISM] : []),
     ]
@@ -1097,6 +1100,7 @@ export default class ChainService extends BaseService<Events> {
     if (
       addressOnNetwork.network.chainID !== ETHEREUM.chainID &&
       addressOnNetwork.network.chainID !== POLYGON.chainID &&
+      addressOnNetwork.network.chainID !== RSK.chainID &&
       addressOnNetwork.network.chainID !== OPTIMISM.chainID &&
       addressOnNetwork.network.chainID !== ARBITRUM_ONE.chainID &&
       addressOnNetwork.network.chainID !== GOERLI.chainID

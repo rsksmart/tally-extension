@@ -20,6 +20,7 @@ type SimpleHashAPIResponse = {
 const CHAIN_ID_TO_NAME = {
   1: "ethereum",
   10: "optimism",
+  31: "rsk",
   137: "polygon",
   42161: "arbitrum",
 }

@@ -38,6 +38,7 @@ function alchemyNFTtoNFT(original: AlchemyNFTItem): NFT {
 const SIMPLE_HASH_CHAIN_TO_ID = {
   ethereum: 1,
   optimism: 10,
+  rsk: 31,
   polygon: 137,
   arbitrum: 42161,
 }

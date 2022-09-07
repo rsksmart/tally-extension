@@ -21,6 +21,7 @@ import {
   COMMUNITY_MULTISIG_ADDRESS,
   ETHEREUM,
   GOERLI,
+  RSK,
   OPTIMISM,
   POLYGON,
 } from "../constants"
@@ -133,6 +134,7 @@ export const SWAP_FEE = 0.005
 const chainIdTo0xApiBase: { [chainID: string]: string | undefined } = {
   [ETHEREUM.chainID]: "api.0x.org",
   [POLYGON.chainID]: "polygon.api.0x.org",
+  [RSK.chainID]: "rsk.api.0x.org",
   [OPTIMISM.chainID]: "optimism.api.0x.org",
   [GOERLI.chainID]: "goerli.api.0x.org",
 }

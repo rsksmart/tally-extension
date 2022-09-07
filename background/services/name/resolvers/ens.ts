@@ -5,6 +5,7 @@ import {
   ETHEREUM,
   GOERLI,
   OPTIMISM,
+  RSK,
   POLYGON,
 } from "../../../constants"
 import { sameNetwork } from "../../../networks"
@@ -13,6 +14,7 @@ import { NameResolver } from "../name-resolver"
 const ENS_SUPPORTED_NETWORKS = [
   ETHEREUM,
   POLYGON,
+  RSK,
   OPTIMISM,
   ARBITRUM_ONE,
   GOERLI,
