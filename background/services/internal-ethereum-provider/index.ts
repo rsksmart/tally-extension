@@ -6,6 +6,7 @@ import {
   EIP1193_ERROR_CODES,
   RPCRequest,
 } from "@tallyho/provider-bridge-shared"
+import { hexlify, toUtf8Bytes } from "ethers/lib/utils"
 import logger from "../../lib/logger"
 
 import BaseService from "../base"
@@ -37,7 +38,6 @@ import {
 } from "./db"
 import { TALLY_INTERNAL_ORIGIN } from "./constants"
 import { ETHEREUM } from "../../constants"
-import { hexToAscii } from "../../lib/utils"
 
 // A type representing the transaction requests that come in over JSON-RPC
 // requests like eth_sendTransaction and eth_signTransaction. These are very
@@ -255,7 +255,9 @@ export default class InternalEthereumProviderService extends BaseService<Events>
           throw new EIP1193Error(EIP1193_ERROR_CODES.chainDisconnected)
         }
         const newChainId = (params[0] as SwitchEthereumChainParameter).chainId
-        const supportedNetwork = this.getSupportedNetworkByChainId(newChainId)
+        const supportedNetwork = await this.getActiveNetworkByChainId(
+          newChainId
+        )
         if (supportedNetwork) {
           await this.db.setActiveChainIdForOrigin(origin, supportedNetwork)
           return null
@@ -339,12 +341,31 @@ export default class InternalEthereumProviderService extends BaseService<Events>
     })
   }
 
-  getSupportedNetworkByChainId(chainID: string): EVMNetwork | undefined {
-    const network = this.chainService.supportedNetworks.find(
-      (supportedNetwork) =>
-        toHexChainID(supportedNetwork.chainID) === toHexChainID(chainID)
+  /**
+   * Attempts to retrieve a network from the extension's currently
+   * active networks.  Falls back to querying supported networks and
+   * activating a given network if it is supported.
+   *
+   * @param chainID EVM Network chainID
+   * @returns a supported EVMNetwork or undefined.
+   */
+  async getActiveNetworkByChainId(
+    chainID: string
+  ): Promise<EVMNetwork | undefined> {
+    const activeNetworks = await this.chainService.getActiveNetworks()
+    const activeNetwork = activeNetworks.find(
+      (network) => toHexChainID(network.chainID) === toHexChainID(chainID)
     )
-    return network
+    if (activeNetwork) {
+      return activeNetwork
+    }
+
+    try {
+      return await this.chainService.activateNetworkOrThrow(chainID)
+    } catch (e) {
+      logger.warn(e)
+      return undefined
+    }
   }
 
   private async signTypedData(params: SignTypedDataRequest) {
@@ -367,10 +388,10 @@ export default class InternalEthereumProviderService extends BaseService<Events>
     },
     origin: string
   ) {
-    const asciiData = input.match(/^0x[0-9A-Fa-f]*$/)
-      ? hexToAscii(input)
-      : input
-    const { data, type } = parseSigningData(asciiData)
+    const hexInput = input.match(/^0x[0-9A-Fa-f]*$/)
+      ? input
+      : hexlify(toUtf8Bytes(input))
+    const { data, type } = parseSigningData(input)
     const activeNetwork = await this.getActiveOrDefaultNetwork(origin)
 
     return new Promise<string>((resolve, reject) => {
@@ -382,7 +403,7 @@ export default class InternalEthereumProviderService extends BaseService<Events>
           },
           signingData: data,
           messageType: type,
-          rawSigningData: asciiData,
+          rawSigningData: hexInput,
         },
         resolver: resolve,
         rejecter: reject,

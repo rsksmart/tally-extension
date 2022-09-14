@@ -8,7 +8,7 @@ export const coinTypesByAssetSymbol = {
   BTC: 0,
   "Testnet BTC": 1,
   ETH: 60,
-  RBTC: 137,
+  tRBTC: 37310,
   MATIC: 966,
 } as const
 

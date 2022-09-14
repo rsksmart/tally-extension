@@ -1,11 +1,11 @@
-import Dexie from "dexie"
+import Dexie, { IndexableTypeArray } from "dexie"
 
 import { UNIXTime } from "../../types"
 import { AccountBalance, AddressOnNetwork } from "../../accounts"
 import { AnyEVMBlock, AnyEVMTransaction, Network } from "../../networks"
 import { FungibleAsset } from "../../assets"
-import { OPTIMISM, POLYGON } from "../../constants"
-import { SUPPORT_OPTIMISM } from "../../features"
+import { OPTIMISM, POLYGON, RSK } from "../../constants"
+import { SUPPORT_OPTIMISM, SUPPORT_RSK } from "../../features"
 
 type Transaction = AnyEVMTransaction & {
   dataSource: "alchemy" | "local"
@@ -117,7 +117,23 @@ export class ChainDatabase extends Dexie {
           })
       })
     }
+    if (SUPPORT_RSK) {
+      this.version(5).upgrade((tx) => {
+        tx.table("accountsToTrack")
+          .toArray()
+          .then((accounts) => {
+            const addresses = new Set<string>()
 
+            accounts.forEach(({ address }) => addresses.add(address))
+            ;[...addresses].forEach((address) => {
+              tx.table("accountsToTrack").put({
+                network: RSK,
+                address,
+              })
+            })
+          })
+      })
+    }
     this.chainTransactions.hook(
       "updating",
       (modifications, _, chainTransaction) => {
@@ -172,6 +188,10 @@ export class ChainDatabase extends Dexie {
           .toArray()
       )[0] || null
     )
+  }
+
+  async getAllSavedTransactionHashes(): Promise<IndexableTypeArray> {
+    return this.chainTransactions.orderBy("hash").keys()
   }
 
   /**
@@ -316,6 +336,17 @@ export class ChainDatabase extends Dexie {
 
   async getAccountsToTrack(): Promise<AddressOnNetwork[]> {
     return this.accountsToTrack.toArray()
+  }
+
+  async getChainIDsToTrack(): Promise<Set<string>> {
+    const chainIDs = await this.accountsToTrack
+      .orderBy("network.chainID")
+      .keys()
+    return new Set(
+      chainIDs.filter(
+        (chainID): chainID is string => typeof chainID === "string"
+      )
+    )
   }
 }
 
